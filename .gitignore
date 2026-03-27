@@ -1,0 +1,11 @@
+.DS_Store
+*.swp
+*.swo
+*~
+scripts/manual_cache/
+scripts/run_log.jsonl
+__pycache__/
+*.pyc
+.env
+Apollo-11/
+blog/blog-post.md
