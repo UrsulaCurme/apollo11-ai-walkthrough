@@ -18,14 +18,7 @@ Some numbers to calibrate your intuition. The [Apollo Guidance Computer](https:/
 
 Four kilobytes of working memory. To put that in perspective: a typical smartcard chip (the one in your bank card) runs an ARM SC300 at 30+ MHz with 300 KB of ROM — faster clock, more memory, fits on your fingernail. An Arduino Uno (16 MHz, 32 KB flash, 2 KB SRAM, $25) is remarkably close to the AGC's spec sheet, fifty years later. The Apple II (1977, 1 MHz 6502, 48 KB RAM) had a comparable clock speed and more RAM for $1,298 — eight years after Apollo 11. A modern washing machine controller runs a Cortex-M0 at 48 MHz with up to 256 KB of flash — roughly 50x the AGC's clock speed.
 
-```mermaid
-xychart-beta
-    title "Clock Speed (MHz) — AGC vs. Everyday Devices"
-    x-axis ["AGC (1966)", "Apple II (1977)", "Arduino Uno (2010)", "Smartcard ARM", "Washing Machine MCU"]
-    y-axis "MHz" 0 --> 55
-    bar [1.024, 1, 16, 30, 48]
-```
-*© Julien Simon, 2026 — [airealist.ai](https://www.airealist.ai)*
+![Clock Speed (MHz) — AGC vs. Everyday Devices](images/agc-clock-comparison.svg)
 
 The AGC, however, was purpose-built for one job: real-time guidance and navigation in space. Its ROM was [core rope memory](https://en.wikipedia.org/wiki/Core_rope_memory) — literally woven by hand by factory workers, threading wires through or around tiny magnetic cores to encode ones and zeros. A single bit was a physical knot. The entire program was frozen into hardware months before launch and could not be patched in flight. The AGC also had a hardware restart capability (`GOJAM`), hardwired I/O channels to the inertial measurement unit, the radar, the engine, and the DSKY display. No general-purpose computer of the era could do what it did because none were designed to survive the failure modes of spaceflight.
 
@@ -38,8 +31,6 @@ AGC4 assembly is a dead language. The architecture is 1's-complement (not 2's-co
 Every bit of every 15-bit word was exploited. The same word format encodes job scheduling state, packed bytecode opcodes, and display buffer dirty flags — three completely different packing schemes depending on the module:
 
 ![The AGC 15-Bit Word: Three Packing Schemes — PRIORITY register (job state via sign arithmetic), Interpreter word (two 7-bit opcodes via hardware co-design), and DSPTAB entry (display diffing via sign-bit flags)](images/agc-word-packing.svg)
-*© Julien Simon, 2026 — [airealist.ai](https://www.airealist.ai)*
-
 Existing resources cover the history well. Simon Allardice did a Pluralsight course for the 50th anniversary. The Virtual AGC project at ibiblio.org provides emulators and an excellent assembly language manual. Borja Sotomayor wrote a good Medium explainer on the `FLAGORGY` subroutine. But nobody had done a systematic, module-by-module technical walkthrough of the actual code — the kind where you trace register contents through an instruction sequence and explain what each line does and why.
 
 I wanted to know if AI could do that. Not as a stunt, but as a genuine test: can an LLM trained overwhelmingly on modern code make sense of a dead architecture for which it has almost no training data?
@@ -93,8 +84,8 @@ sequenceDiagram
     GD->>GD: Resume gravity-turn guidance at 2 Hz
     Note over GD: Descent continues.<br/>Armstrong lands.
     deactivate GD
+    Note over HW,GD: © Julien Simon, 2026 — www.airealist.ai
 ```
-*© Julien Simon, 2026 — [airealist.ai](https://www.airealist.ai)*
 
 **[Landing Guidance Equations](https://github.com/juliensimon/apollo11-ai-walkthrough/blob/master/walkthrough/04-landing-guidance.md)** — The math that flew the Lunar Module to the surface. Programs P63 (braking), P64 (approach with redesignation), and P66 (manual rate-of-descent) implement a gravity-turn guidance algorithm running at 2 Hz in interpreted bytecode. The code handles the transition from automatic to manual control, the moment Armstrong took the stick to dodge a boulder field.
 
@@ -126,9 +117,11 @@ stateDiagram-v2
         Rate-of-descent control
         Manual override
         "The Eagle has landed"
+        .
+        © Julien Simon, 2026
+        www.airealist.ai
     end note
 ```
-*© Julien Simon, 2026 — [airealist.ai](https://www.airealist.ai)*
 
 **[BURN_BABY_BURN](https://github.com/juliensimon/apollo11-ai-walkthrough/blob/master/walkthrough/05-burn-baby-burn.md)** — The master ignition routine that starts every engine burn. It uses table-driven virtual method dispatch — structurally identical to a C++ vtable — so one generic routine handles descent, ascent, and orbital burns. Also, the most culturally rich file in the codebase: Latin inscriptions ("NOLI SE TANGERE" — touch it not), a reference to the Order of the Garter, and the word "EXTIRPATE" where a modern programmer would write "clear."
 
