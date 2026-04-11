@@ -206,4 +206,7 @@
       Job state via sign arithmetic  |  Two opcodes via hardware co-design  |  Display diffing via sign-bit flags
     </text>
   </g>
+
+  <!-- Copyright -->
+  <text x="790" y="512" text-anchor="end" font-size="10" fill="#999" font-family="'Helvetica Neue', Arial, sans-serif">© Julien Simon, 2026 — www.airealist.ai</text>
 </svg>

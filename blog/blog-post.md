@@ -25,6 +25,7 @@ xychart-beta
     y-axis "MHz" 0 --> 55
     bar [1.024, 1, 16, 30, 48]
 ```
+*© Julien Simon, 2026 — [airealist.ai](https://www.airealist.ai)*
 
 The AGC, however, was purpose-built for one job: real-time guidance and navigation in space. Its ROM was [core rope memory](https://en.wikipedia.org/wiki/Core_rope_memory) — literally woven by hand by factory workers, threading wires through or around tiny magnetic cores to encode ones and zeros. A single bit was a physical knot. The entire program was frozen into hardware months before launch and could not be patched in flight. The AGC also had a hardware restart capability (`GOJAM`), hardwired I/O channels to the inertial measurement unit, the radar, the engine, and the DSKY display. No general-purpose computer of the era could do what it did because none were designed to survive the failure modes of spaceflight.
 
@@ -37,6 +38,7 @@ AGC4 assembly is a dead language. The architecture is 1's-complement (not 2's-co
 Every bit of every 15-bit word was exploited. The same word format encodes job scheduling state, packed bytecode opcodes, and display buffer dirty flags — three completely different packing schemes depending on the module:
 
 ![The AGC 15-Bit Word: Three Packing Schemes — PRIORITY register (job state via sign arithmetic), Interpreter word (two 7-bit opcodes via hardware co-design), and DSPTAB entry (display diffing via sign-bit flags)](images/agc-word-packing.svg)
+*© Julien Simon, 2026 — [airealist.ai](https://www.airealist.ai)*
 
 Existing resources cover the history well. Simon Allardice did a Pluralsight course for the 50th anniversary. The Virtual AGC project at ibiblio.org provides emulators and an excellent assembly language manual. Borja Sotomayor wrote a good Medium explainer on the `FLAGORGY` subroutine. But nobody had done a systematic, module-by-module technical walkthrough of the actual code — the kind where you trace register contents through an instruction sequence and explain what each line does and why.
 
@@ -55,23 +57,6 @@ The workflow was five phases, all scripted (all [prompts](https://github.com/jul
 3. **Targeted deep dives** — one per key module, each receiving the full source file plus the architecture context
 4. **Synthesis** — feed all walkthrough files back in, extract cross-cutting lessons
 5. **Quality check** — cross-reference claims across files, verify against the manual, flag inconsistencies
-
-```mermaid
-graph LR
-    A["<b>Phase 1</b><br/>Context Priming<br/><i>3,500-word AGC ref</i>"] --> B["<b>Phase 2</b><br/>Repo Recon<br/><i>175 .agc files scanned</i>"]
-    B --> C["<b>Phase 3</b><br/>Deep Dives<br/><i>8 modules, 3-7 min each</i>"]
-    C --> D["<b>Phase 4</b><br/>Synthesis<br/><i>Cross-cutting lessons</i>"]
-    D --> E["<b>Phase 5</b><br/>Quality Check<br/><i>Verify vs. manual</i>"]
-    A -.->|"architecture context injected into every call"| C
-    A -.-> D
-    A -.-> E
-
-    style A fill:#2c3e50,stroke:#1a252f,color:#ecf0f1
-    style B fill:#2980b9,stroke:#1f6fa3,color:#ecf0f1
-    style C fill:#8e44ad,stroke:#6c3483,color:#ecf0f1
-    style D fill:#27ae60,stroke:#1e8449,color:#ecf0f1
-    style E fill:#e67e22,stroke:#d35400,color:#ecf0f1
-```
 
 I used Claude Code's CLI in pipe mode (`claude -p`) with Opus 4.6. Each deep dive took 3-7 minutes of compute. Total wall-clock time for the entire project: under an hour of model time across two days. No API key needed — my Max subscription covered it.
 
@@ -109,6 +94,7 @@ sequenceDiagram
     Note over GD: Descent continues.<br/>Armstrong lands.
     deactivate GD
 ```
+*© Julien Simon, 2026 — [airealist.ai](https://www.airealist.ai)*
 
 **[Landing Guidance Equations](https://github.com/juliensimon/apollo11-ai-walkthrough/blob/master/walkthrough/04-landing-guidance.md)** — The math that flew the Lunar Module to the surface. Programs P63 (braking), P64 (approach with redesignation), and P66 (manual rate-of-descent) implement a gravity-turn guidance algorithm running at 2 Hz in interpreted bytecode. The code handles the transition from automatic to manual control, the moment Armstrong took the stick to dodge a boulder field.
 
@@ -142,6 +128,7 @@ stateDiagram-v2
         "The Eagle has landed"
     end note
 ```
+*© Julien Simon, 2026 — [airealist.ai](https://www.airealist.ai)*
 
 **[BURN_BABY_BURN](https://github.com/juliensimon/apollo11-ai-walkthrough/blob/master/walkthrough/05-burn-baby-burn.md)** — The master ignition routine that starts every engine burn. It uses table-driven virtual method dispatch — structurally identical to a C++ vtable — so one generic routine handles descent, ascent, and orbital burns. Also, the most culturally rich file in the codebase: Latin inscriptions ("NOLI SE TANGERE" — touch it not), a reference to the Order of the Garter, and the word "EXTIRPATE" where a modern programmer would write "clear."
 
