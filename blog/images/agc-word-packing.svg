@@ -1,0 +1,209 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 520" font-family="'Courier New', monospace">
+  <defs>
+    <style>
+      .title { font-size: 16px; font-weight: bold; fill: #1a1a2e; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      .subtitle { font-size: 12px; fill: #4a4a6a; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      .bit-num { font-size: 9px; fill: #888; text-anchor: middle; }
+      .bit-val { font-size: 11px; fill: #fff; text-anchor: middle; font-weight: bold; }
+      .label { font-size: 11px; fill: #1a1a2e; font-weight: bold; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      .note { font-size: 10px; fill: #555; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      .field-label { font-size: 10px; fill: #1a1a2e; text-anchor: middle; font-weight: bold; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      .state-text { font-size: 9.5px; fill: #333; font-family: 'Helvetica Neue', Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="820" height="520" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+
+  <!-- Main title -->
+  <text x="410" y="32" text-anchor="middle" class="title" font-size="18">The AGC 15-Bit Word: Three Packing Schemes</text>
+  <text x="410" y="50" text-anchor="middle" class="subtitle">Every bit counted. The MIT team exploited every encoding trick available.</text>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 1: PRIORITY Register               -->
+  <!-- ═══════════════════════════════════════════ -->
+  <text x="30" y="88" class="label" font-size="13">PRIORITY Register</text>
+  <text x="210" y="88" class="subtitle">(Executive — job scheduling)</text>
+
+  <!-- Bit numbers -->
+  <g transform="translate(30, 95)">
+    <text x="20" y="12" class="bit-num">15</text>
+    <text x="60" y="12" class="bit-num">14</text>
+    <text x="100" y="12" class="bit-num">13</text>
+    <text x="140" y="12" class="bit-num">12</text>
+    <text x="180" y="12" class="bit-num">11</text>
+    <text x="220" y="12" class="bit-num">10</text>
+    <text x="260" y="12" class="bit-num">9</text>
+    <text x="300" y="12" class="bit-num">8</text>
+    <text x="340" y="12" class="bit-num">7</text>
+    <text x="380" y="12" class="bit-num">6</text>
+    <text x="420" y="12" class="bit-num">5</text>
+    <text x="460" y="12" class="bit-num">4</text>
+    <text x="500" y="12" class="bit-num">3</text>
+    <text x="540" y="12" class="bit-num">2</text>
+    <text x="580" y="12" class="bit-num">1</text>
+  </g>
+
+  <!-- Bit cells -->
+  <g transform="translate(30, 110)">
+    <!-- Sign bit (bit 15) - red/orange -->
+    <rect x="0" y="0" width="40" height="32" rx="3" fill="#c0392b" stroke="#a93226" stroke-width="1"/>
+    <text x="20" y="20" class="bit-val">SGN</text>
+
+    <!-- Priority level (bits 14-10) - blue -->
+    <rect x="40" y="0" width="200" height="32" rx="3" fill="#2980b9" stroke="#2471a3" stroke-width="1"/>
+    <text x="140" y="20" class="bit-val">priority level</text>
+
+    <!-- VAC area pointer (bits 9-1) - green -->
+    <rect x="240" y="0" width="360" height="32" rx="3" fill="#27ae60" stroke="#229954" stroke-width="1"/>
+    <text x="420" y="20" class="bit-val">VAC area pointer (low 9 bits)</text>
+  </g>
+
+  <!-- State annotations -->
+  <g transform="translate(30, 152)">
+    <text x="0" y="0" class="state-text">+ (positive)</text>
+    <text x="0" y="13" class="state-text" font-weight="bold" fill="#c0392b">  = active job</text>
+    <text x="155" y="0" class="state-text">- (negative)</text>
+    <text x="155" y="13" class="state-text" font-weight="bold" fill="#c0392b">  = sleeping</text>
+    <text x="310" y="0" class="state-text">-0 (all ones)</text>
+    <text x="310" y="13" class="state-text" font-weight="bold" fill="#c0392b">  = free slot</text>
+    <text x="500" y="6" class="note" font-style="italic">Three states from 1's-complement arithmetic</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="30" y1="182" x2="790" y2="182" stroke="#dee2e6" stroke-width="1" stroke-dasharray="4,4"/>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 2: Interpreter Word                 -->
+  <!-- ═══════════════════════════════════════════ -->
+  <text x="30" y="208" class="label" font-size="13">Interpreter Word</text>
+  <text x="185" y="208" class="subtitle">(Bytecode VM — two instructions per word)</text>
+
+  <!-- Bit numbers -->
+  <g transform="translate(30, 215)">
+    <text x="20" y="12" class="bit-num">15</text>
+    <text x="60" y="12" class="bit-num">14</text>
+    <text x="100" y="12" class="bit-num">13</text>
+    <text x="140" y="12" class="bit-num">12</text>
+    <text x="180" y="12" class="bit-num">11</text>
+    <text x="220" y="12" class="bit-num">10</text>
+    <text x="260" y="12" class="bit-num">9</text>
+    <text x="300" y="12" class="bit-num">8</text>
+    <text x="340" y="12" class="bit-num">7</text>
+    <text x="380" y="12" class="bit-num">6</text>
+    <text x="420" y="12" class="bit-num">5</text>
+    <text x="460" y="12" class="bit-num">4</text>
+    <text x="500" y="12" class="bit-num">3</text>
+    <text x="540" y="12" class="bit-num">2</text>
+    <text x="580" y="12" class="bit-num">1</text>
+  </g>
+
+  <!-- Bit cells -->
+  <g transform="translate(30, 230)">
+    <!-- Sign bit (bit 15) - orange -->
+    <rect x="0" y="0" width="40" height="32" rx="3" fill="#e67e22" stroke="#d35400" stroke-width="1"/>
+    <text x="20" y="20" class="bit-val" font-size="9">TYPE</text>
+
+    <!-- Left opcode (bits 14-8) - purple -->
+    <rect x="40" y="0" width="280" height="32" rx="3" fill="#8e44ad" stroke="#7d3c98" stroke-width="1"/>
+    <text x="180" y="20" class="bit-val">opcode 2  (7 bits)</text>
+
+    <!-- Right opcode (bits 7-1) - teal -->
+    <rect x="320" y="0" width="280" height="32" rx="3" fill="#16a085" stroke="#138d75" stroke-width="1"/>
+    <text x="460" y="20" class="bit-val">opcode 1  (7 bits)</text>
+  </g>
+
+  <!-- Annotations -->
+  <g transform="translate(30, 272)">
+    <text x="0" y="0" class="state-text">0 = opcode pair</text>
+    <text x="0" y="13" class="state-text">1 = store code</text>
+    <text x="155" y="0" class="note">Stored in EDOP register</text>
+    <text x="155" y="13" class="note">(hardware auto-shifts right 7 bits)</text>
+    <text x="380" y="0" class="note">Dispatched first via MASK LOW7</text>
+    <text x="380" y="13" class="note">(extracted from accumulator)</text>
+  </g>
+
+  <!-- Arrow showing dispatch order -->
+  <g transform="translate(30, 298)">
+    <text x="460" y="4" class="state-text" fill="#16a085" font-weight="bold">dispatch first</text>
+    <line x1="520" y1="7" x2="460" y2="7" stroke="#16a085" stroke-width="1.5" marker-start="url(#arrowGreen)"/>
+    <text x="180" y="4" class="state-text" fill="#8e44ad" font-weight="bold">dispatch second</text>
+    <line x1="270" y1="7" x2="210" y2="7" stroke="#8e44ad" stroke-width="1.5" marker-start="url(#arrowPurple)"/>
+  </g>
+
+  <defs>
+    <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+      <polygon points="8 0, 8 6, 0 3" fill="#16a085"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+      <polygon points="8 0, 8 6, 0 3" fill="#8e44ad"/>
+    </marker>
+  </defs>
+
+  <!-- Divider -->
+  <line x1="30" y1="318" x2="790" y2="318" stroke="#dee2e6" stroke-width="1" stroke-dasharray="4,4"/>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 3: DSPTAB Entry                     -->
+  <!-- ═══════════════════════════════════════════ -->
+  <text x="30" y="344" class="label" font-size="13">DSPTAB Entry</text>
+  <text x="160" y="344" class="subtitle">(DSKY display buffer — dirty-flag tracking)</text>
+
+  <!-- Bit numbers -->
+  <g transform="translate(30, 351)">
+    <text x="20" y="12" class="bit-num">15</text>
+    <text x="60" y="12" class="bit-num">14</text>
+    <text x="100" y="12" class="bit-num">13</text>
+    <text x="140" y="12" class="bit-num">12</text>
+    <text x="180" y="12" class="bit-num">11</text>
+    <text x="220" y="12" class="bit-num">10</text>
+    <text x="260" y="12" class="bit-num">9</text>
+    <text x="300" y="12" class="bit-num">8</text>
+    <text x="340" y="12" class="bit-num">7</text>
+    <text x="380" y="12" class="bit-num">6</text>
+    <text x="420" y="12" class="bit-num">5</text>
+    <text x="460" y="12" class="bit-num">4</text>
+    <text x="500" y="12" class="bit-num">3</text>
+    <text x="540" y="12" class="bit-num">2</text>
+    <text x="580" y="12" class="bit-num">1</text>
+  </g>
+
+  <!-- Bit cells -->
+  <g transform="translate(30, 366)">
+    <!-- Dirty flag (bit 15) - red/pink -->
+    <rect x="0" y="0" width="40" height="32" rx="3" fill="#e74c3c" stroke="#cb4335" stroke-width="1"/>
+    <text x="20" y="14" class="bit-val" font-size="8">DIRTY</text>
+    <text x="20" y="26" class="bit-val" font-size="8">FLAG</text>
+
+    <!-- Relay address (bits 14-11) - slate -->
+    <rect x="40" y="0" width="160" height="32" rx="3" fill="#546e7a" stroke="#455a64" stroke-width="1"/>
+    <text x="120" y="20" class="bit-val">relay addr</text>
+
+    <!-- Left character (bits 10-6) - indigo -->
+    <rect x="200" y="0" width="200" height="32" rx="3" fill="#3f51b5" stroke="#3949ab" stroke-width="1"/>
+    <text x="300" y="20" class="bit-val">character 1  (5 bits)</text>
+
+    <!-- Right character (bits 5-1) - deep orange -->
+    <rect x="400" y="0" width="200" height="32" rx="3" fill="#e65100" stroke="#bf360c" stroke-width="1"/>
+    <text x="500" y="20" class="bit-val">character 2  (5 bits)</text>
+  </g>
+
+  <!-- Annotations -->
+  <g transform="translate(30, 408)">
+    <text x="0" y="0" class="state-text" font-weight="bold" fill="#e74c3c">+ (positive) = sent to hardware</text>
+    <text x="0" y="13" class="state-text" font-weight="bold" fill="#e74c3c">- (negative) = needs update</text>
+    <text x="280" y="6" class="note" font-style="italic">Same principle as React's virtual DOM diffing — in 14 words of 1966 assembly</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="30" y1="438" x2="790" y2="438" stroke="#dee2e6" stroke-width="1" stroke-dasharray="4,4"/>
+
+  <!-- Bottom summary -->
+  <g transform="translate(30, 458)">
+    <rect x="0" y="0" width="760" height="48" rx="6" fill="#eef2f7" stroke="#c5cdd8" stroke-width="1"/>
+    <text x="380" y="18" text-anchor="middle" class="label" font-size="12" fill="#2c3e50">One 15-bit word, three different encodings:</text>
+    <text x="380" y="36" text-anchor="middle" class="note" font-size="11">
+      Job state via sign arithmetic  |  Two opcodes via hardware co-design  |  Display diffing via sign-bit flags
+    </text>
+  </g>
+</svg>

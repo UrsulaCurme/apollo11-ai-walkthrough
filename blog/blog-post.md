@@ -18,6 +18,14 @@ Some numbers to calibrate your intuition. The [Apollo Guidance Computer](https:/
 
 Four kilobytes of working memory. To put that in perspective: a typical smartcard chip (the one in your bank card) runs an ARM SC300 at 30+ MHz with 300 KB of ROM — faster clock, more memory, fits on your fingernail. An Arduino Uno (16 MHz, 32 KB flash, 2 KB SRAM, $25) is remarkably close to the AGC's spec sheet, fifty years later. The Apple II (1977, 1 MHz 6502, 48 KB RAM) had a comparable clock speed and more RAM for $1,298 — eight years after Apollo 11. A modern washing machine controller runs a Cortex-M0 at 48 MHz with up to 256 KB of flash — roughly 50x the AGC's clock speed.
 
+```mermaid
+xychart-beta
+    title "Clock Speed (MHz) — AGC vs. Everyday Devices"
+    x-axis ["AGC (1966)", "Apple II (1977)", "Arduino Uno (2010)", "Smartcard ARM", "Washing Machine MCU"]
+    y-axis "MHz" 0 --> 55
+    bar [1.024, 1, 16, 30, 48]
+```
+
 The AGC, however, was purpose-built for one job: real-time guidance and navigation in space. Its ROM was [core rope memory](https://en.wikipedia.org/wiki/Core_rope_memory) — literally woven by hand by factory workers, threading wires through or around tiny magnetic cores to encode ones and zeros. A single bit was a physical knot. The entire program was frozen into hardware months before launch and could not be patched in flight. The AGC also had a hardware restart capability (`GOJAM`), hardwired I/O channels to the inertial measurement unit, the radar, the engine, and the DSKY display. No general-purpose computer of the era could do what it did because none were designed to survive the failure modes of spaceflight.
 
 The software was written by a team of about 350 people at the MIT Instrumentation Laboratory, led by [Margaret Hamilton](https://en.wikipedia.org/wiki/Margaret_Hamilton_%28software_engineer%29). Many of the flight software developers were in their mid-twenties. Hamilton coined the term **"software engineering"** — a phrase considered an oxymoron at the time. Her team's insistence that software be engineered with the same rigour as hardware is what saved the Apollo 11 landing when things went wrong.
@@ -25,6 +33,10 @@ The software was written by a team of about 350 people at the MIT Instrumentatio
 ## The Problem
 
 AGC4 assembly is a dead language. The architecture is 1's-complement (not 2's-complement like every modern CPU). The primary conditional branch, `CCS`, does a 4-way skip based on positive, plus-zero, negative, and minus-zero — because 1's-complement has two representations of zero. There's no stack. One register holds one return address. Memory is bank-switched through three different registers plus a "superbank" bit. The codebase is split between native assembly and an interpreted bytecode language that runs on a software virtual machine built into the AGC itself.
+
+Every bit of every 15-bit word was exploited. The same word format encodes job scheduling state, packed bytecode opcodes, and display buffer dirty flags — three completely different packing schemes depending on the module:
+
+![The AGC 15-Bit Word: Three Packing Schemes — PRIORITY register (job state via sign arithmetic), Interpreter word (two 7-bit opcodes via hardware co-design), and DSPTAB entry (display diffing via sign-bit flags)](images/agc-word-packing.svg)
 
 Existing resources cover the history well. Simon Allardice did a Pluralsight course for the 50th anniversary. The Virtual AGC project at ibiblio.org provides emulators and an excellent assembly language manual. Borja Sotomayor wrote a good Medium explainer on the `FLAGORGY` subroutine. But nobody had done a systematic, module-by-module technical walkthrough of the actual code — the kind where you trace register contents through an instruction sequence and explain what each line does and why.
 
@@ -44,6 +56,23 @@ The workflow was five phases, all scripted (all [prompts](https://github.com/jul
 4. **Synthesis** — feed all walkthrough files back in, extract cross-cutting lessons
 5. **Quality check** — cross-reference claims across files, verify against the manual, flag inconsistencies
 
+```mermaid
+graph LR
+    A["<b>Phase 1</b><br/>Context Priming<br/><i>3,500-word AGC ref</i>"] --> B["<b>Phase 2</b><br/>Repo Recon<br/><i>175 .agc files scanned</i>"]
+    B --> C["<b>Phase 3</b><br/>Deep Dives<br/><i>8 modules, 3-7 min each</i>"]
+    C --> D["<b>Phase 4</b><br/>Synthesis<br/><i>Cross-cutting lessons</i>"]
+    D --> E["<b>Phase 5</b><br/>Quality Check<br/><i>Verify vs. manual</i>"]
+    A -.->|"architecture context injected into every call"| C
+    A -.-> D
+    A -.-> E
+
+    style A fill:#2c3e50,stroke:#1a252f,color:#ecf0f1
+    style B fill:#2980b9,stroke:#1f6fa3,color:#ecf0f1
+    style C fill:#8e44ad,stroke:#6c3483,color:#ecf0f1
+    style D fill:#27ae60,stroke:#1e8449,color:#ecf0f1
+    style E fill:#e67e22,stroke:#d35400,color:#ecf0f1
+```
+
 I used Claude Code's CLI in pipe mode (`claude -p`) with Opus 4.6. Each deep dive took 3-7 minutes of compute. Total wall-clock time for the entire project: under an hour of model time across two days. No API key needed — my Max subscription covered it.
 
 ## What the Code Reveals
@@ -56,7 +85,63 @@ Eight walkthrough files. 6,500 lines of analysis. Here's what each module taught
 
 **[Fresh Start & Restart](https://github.com/juliensimon/apollo11-ai-walkthrough/blob/master/walkthrough/03-restart.md)** — The module that saved Apollo 11. When the 1202 alarms fired during descent, this code restarted the computer, verified the integrity of a checksummed phase table, reinitialised all scheduling, and resumed the guidance equations within milliseconds, while the descent engine kept firing. This is a crash-only design and "let it crash" philosophy, implemented 20 years before Erlang and 37 years before the pattern was formally described at Stanford.
 
+```mermaid
+sequenceDiagram
+    participant HW as AGC Hardware
+    participant RS as Restart Code
+    participant EX as Executive
+    participant GD as Guidance (P63)
+
+    Note over HW: Rendezvous radar<br/>steals too many cycles
+    HW->>RS: GOJAM → vector to address 4000
+    activate RS
+    RS->>RS: Increment REDOCTR (restart counter)
+    RS->>RS: Verify erasable memory integrity
+    RS->>RS: Read phase table (checksummed)
+    RS->>EX: STARTSUB — rebuild job table
+    deactivate RS
+    activate EX
+    EX->>EX: Reinitialise all 7 core sets
+    EX->>GD: Reschedule P63 at priority 21
+    deactivate EX
+    activate GD
+    GD->>GD: Resume gravity-turn guidance at 2 Hz
+    Note over GD: Descent continues.<br/>Armstrong lands.
+    deactivate GD
+```
+
 **[Landing Guidance Equations](https://github.com/juliensimon/apollo11-ai-walkthrough/blob/master/walkthrough/04-landing-guidance.md)** — The math that flew the Lunar Module to the surface. Programs P63 (braking), P64 (approach with redesignation), and P66 (manual rate-of-descent) implement a gravity-turn guidance algorithm running at 2 Hz in interpreted bytecode. The code handles the transition from automatic to manual control, the moment Armstrong took the stick to dodge a boulder field.
+
+```mermaid
+stateDiagram-v2
+    [*] --> P63 : Engine ignition
+
+    state "P63 — Braking" as P63
+    state "P64 — Approach" as P64
+    state "P66 — Manual" as P66
+
+    P63 --> P64 : Altitude < threshold
+    P64 --> P66 : Astronaut takes the stick
+
+    P66 --> [*] : Touchdown
+
+    note right of P63
+        Gravity-turn guidance
+        2 Hz in interpreted bytecode
+        Automatic throttle control
+    end note
+
+    note right of P64
+        Landing point redesignation
+        Armstrong sees boulder field
+    end note
+
+    note right of P66
+        Rate-of-descent control
+        Manual override
+        "The Eagle has landed"
+    end note
+```
 
 **[BURN_BABY_BURN](https://github.com/juliensimon/apollo11-ai-walkthrough/blob/master/walkthrough/05-burn-baby-burn.md)** — The master ignition routine that starts every engine burn. It uses table-driven virtual method dispatch — structurally identical to a C++ vtable — so one generic routine handles descent, ascent, and orbital burns. Also, the most culturally rich file in the codebase: Latin inscriptions ("NOLI SE TANGERE" — touch it not), a reference to the Order of the Garter, and the word "EXTIRPATE" where a modern programmer would write "clear."
 
