@@ -1,30 +1,30 @@
-# The Restart That Saved Apollo 11: How the AGC Recovered from 1202
+# 拯救阿波罗11号的重启：AGC 如何从 1202 报警中恢复
 
-## Introduction
+## 简介
 
-On July 20, 1969, with the Lunar Module *Eagle* descending toward the Sea of Tranquility, the AGC's DSKY flashed **PROG 1202** — executive overflow. The computer was being overwhelmed. In any lesser system, that alarm would have meant an abort. Instead, the AGC did something extraordinary: it restarted itself, shed non-essential work, and kept the landing guidance running. It did this not once but several times during the descent, and Neil Armstrong landed with the computer functioning correctly throughout.
+1969 年 7 月 20 日，登月舱*鹰号*正朝静海下降，AGC 的 DSKY 闪出了 **PROG 1202**——执行溢出。计算机正在被压垮。在任何较差的系统中，这个报警都意味着中止。然而，AGC 做了一件非凡的事：它重启了自身，卸载了非关键工作，并保持着陆制导继续运行。它不是只做了一次，而是在下降过程中多次如此，Neil Armstrong 全程都在计算机正常运行的情况下着陆了。
 
-This chapter traces the code that made that possible, across two files in `Luminary099/`: `FRESH_START_AND_RESTART.agc` (pages 211–237) and `ALARM_AND_ABORT.agc` (pages 1381–1385). Together, they implement what we would today call a *priority-based graceful degradation system* — built in the 1960s, in 15-bit assembly, with 2K of RAM.
+本章追踪使这一切成为可能的代码，涵盖 `Luminary099/` 中的两个文件：`FRESH_START_AND_RESTART.agc`（第 211–237 页）和 `ALARM_AND_ABORT.agc`（第 1381–1385 页）。它们共同实现了我们今天称之为*基于优先级的优雅降级系统*的机制——构建于 1960 年代，用 15 位汇编语言，只有 2K RAM。
 
 ---
 
-## 1. Fresh Start vs. Restart: Two Paths Through the Same Code
+## 1. 新启动与重启：同一代码的两条路径
 
-The AGC has two fundamentally different initialization paths, and the code is structured so they share a common subroutine (`STARTSUB`) while diverging on what state they preserve.
+AGC 有两条根本不同的初始化路径，代码的结构使它们共享一个公共子程序（`STARTSUB`），同时在保留哪些状态上有所不同。
 
-### 1.1 The Fresh Start Path
+### 1.1 新启动路径
 
-A fresh start occurs on initial power-up or when the astronaut explicitly requests a full reset (via the DSKY key combination of Mark Reject + Error Reset). The entry point is `SLAP1`:
+新启动发生在初始上电时，或者宇航员明确请求完全重置时（通过 DSKY 的 Mark Reject + Error Reset 组合键）。入口点是 `SLAP1`：
 
 ```agc
 SLAP1       INHINT              # FRESH START. COMES HERE FROM PINBALL.
             TC      STARTSUB    # SUBROUTINE DOES MOST OF THE WORK
 ```
-*(FRESH_START_AND_RESTART.agc, ~line 30)*
+*（FRESH_START_AND_RESTART.agc，约第 30 行）*
 
-After `STARTSUB` returns, the fresh start path continues at `SKIPSIM`, which proceeds to:
+`STARTSUB` 返回后，新启动路径继续在 `SKIPSIM` 处，然后进行：
 
-1. **Turn off DSKY lamps** (preserving only gimbal lock and no-attitude indicators):
+1. **关闭 DSKY 指示灯**（仅保留万向锁和无姿态指示器）：
    ```agc
    SKIPSIM     CA      DSPTAB +11D   # TURN OFF ALL DSPTAB +11D LAMPS
                MASK    BITS4&6       # EXCEPT THE GIMBAL LOCK & NO ATT ONLY ON
@@ -32,9 +32,9 @@ After `STARTSUB` returns, the fresh start path continues at `SKIPSIM`, which pro
                TS      DSPTAB +11D
    ```
 
-2. **Initialize the downlink dump counter** for one pass.
+2. **初始化下行链路转储计数器**，用于一次传输。
 
-3. **Zero out the error counters and failure registers**:
+3. **清零错误计数器和故障寄存器**：
    ```agc
                CA      ZERO
                TS      ERCOUNT
@@ -43,9 +43,9 @@ After `STARTSUB` returns, the fresh start path continues at `SKIPSIM`, which pro
                TS      FAILREG +2
                TS      REDOCTR
    ```
-   Note: `REDOCTR` (the restart counter) is zeroed only on fresh start. On a restart, it is *incremented*. This is how ground controllers could track how many restarts had occurred.
+   注意：`REDOCTR`（重启计数器）仅在新启动时清零。重启时，它被*递增*。这是地面控制人员跟踪发生了多少次重启的方式。
 
-4. **Ensure the engine is off** — a critical safety measure:
+4. **确保引擎关闭**——关键安全措施：
    ```agc
    DOFSTART    CAF     BIT14         # INSURE ENGINE IS OFF.
                EXTEND
@@ -54,7 +54,7 @@ After `STARTSUB` returns, the fresh start path continues at `SKIPSIM`, which pro
                TS      THRUST
    ```
 
-5. **Initialize the DAP** (Digital Autopilot), all flag words, switch state tables, and IMU modes. The fresh start path writes to `STATE` through `STATE +11D` — twelve words of flag bits that track every significant software state in the system:
+5. **初始化 DAP**（数字自动驾驶仪）、所有标志字、开关状态表和 IMU 模式。新启动路径写入 `STATE` 到 `STATE +11D`——十二个字的标志位，跟踪系统中每个重要的软件状态：
    ```agc
                EXTEND              # INITIALIZE SWITCHES ONLY ON FRESH START.
                DCA     SWINIT
@@ -63,7 +63,7 @@ After `STARTSUB` returns, the fresh start path continues at `SKIPSIM`, which pro
                TS      STATE +2
    ```
 
-   But even here, the code is careful. Certain flags are *preserved* even across a fresh start:
+   但即便如此，代码也很小心。某些标志即使在新启动时也被*保留*：
    ```agc
                CA      REFSMBIT    # DO NOT ALTER REFSMFLG ON FRESH START.
                MASK    STATE +3
@@ -78,13 +78,14 @@ After `STARTSUB` returns, the fresh start path continues at `SKIPSIM`, which pro
                AD      SWINIT +8D
                TS      STATE +8D
    ```
-   The reference frame flag (`REFSMFLG`), the surface flag (`SURFFLAG`), and the moon flags are left untouched — because losing track of whether you're orbiting the Moon or sitting on its surface would be catastrophic regardless of what reset triggered.
 
-6. **Exit through `ENDRSTRT`**, which jumps to `DUMMYJOB +2`, picking up at `RELINT` (re-enabling interrupts) without zeroing `NEWJOB`.
+   参考系标志（`REFSMFLG`）、表面标志（`SURFFLAG`）和月球标志保持不变——因为无论什么重置触发，失去对自己是在绕月还是坐在月球表面的追踪都将是灾难性的。
 
-### 1.2 The Restart Path
+6. **通过 `ENDRSTRT` 退出**，跳转到 `DUMMYJOB +2`，在 `RELINT`（重新启用中断）处继续，而不将 `NEWJOB` 清零。
 
-A restart occurs when the AGC hardware detects a condition requiring a software reset — the `GOJAM` signal. This vectors execution to address 4000 (the boot vector), which transfers to `GOPROG`:
+### 1.2 重启路径
+
+当 AGC 硬件检测到需要软件重置的条件时——`GOJAM` 信号——就会发生重启。这将执行向量到地址 4000（启动向量），转移到 `GOPROG`：
 
 ```agc
 # COMES HERE FROM LOCATION 4000, GOJAM, RESTART ANY PROGRAMS
@@ -93,20 +94,20 @@ A restart occurs when the AGC hardware detects a condition requiring a software 
         EBANK=  LST1
 GOPROG  INCR    REDOCTR         # ADVANCE RESTART COUNTER.
 ```
-*(FRESH_START_AND_RESTART.agc, ~page 215)*
+*（FRESH_START_AND_RESTART.agc，约第 215 页）*
 
-The very first instruction increments `REDOCTR` — the restart counter. This is the telemetry breadcrumb that told Houston how many restarts had occurred. During the Apollo 11 landing, this counter advanced several times.
+第一条指令就递增了 `REDOCTR`——重启计数器。这是告诉休斯顿发生了多少次重启的遥测标记。在阿波罗 11 号着陆期间，这个计数器前进了几次。
 
-Next, the code saves the bank state:
+接下来，代码保存 bank 状态：
 ```agc
         LXCH    Q
         EXTEND
         ROR     SUPERBNK
         DXCH    RSBBQ
 ```
-This preserves Q (return address) and the superbank bits into `RSBBQ`, capturing where the computer was when the restart hit.
+这将 Q（返回地址）和超级 bank 位保存到 `RSBBQ`，捕获重启发生时计算机所处的位置。
 
-The restart path then checks whether the IMU was in coarse align (needed for gimbal lock recovery):
+重启路径然后检查 IMU 是否处于粗对准模式（万向锁恢复所需）：
 ```agc
         CA      DSPTAB +11D
         MASK    BIT4
@@ -117,9 +118,9 @@ The restart path then checks whether the IMU was in coarse align (needed for gim
         WOR     CHAN12          # ISS WAS IN COARSE ALIGN SO GO BACK TO
 ```
 
-### 1.3 The Erasable Memory Integrity Check
+### 1.3 可擦除内存完整性检查
 
-Before proceeding with restart, the code performs a remarkable integrity check on erasable (RAM) memory. The `ERASCHK` system works like this: when the system is modifying erasable memory, it saves backup copies in `SKEEP5`/`SKEEP6` and records what address is being modified in `SKEEP7` and `ERESTORE`. On restart:
+在继续重启之前，代码对可擦除（RAM）内存执行了一次非凡的完整性检查。`ERASCHK` 系统的工作方式如下：当系统修改可擦除内存时，它将备份副本保存在 `SKEEP5`/`SKEEP6` 中，并在 `SKEEP7` 和 `ERESTORE` 中记录正在修改的地址。重启时：
 
 ```agc
         CAF     HI5
@@ -136,12 +137,12 @@ Before proceeding with restart, the code performs a remarkable integrity check o
         TCF     NONAVKEY +3     # DO FRESH START -- E MEMORY MIGHT BE BAD
 ```
 
-The logic is:
-- If `ERESTORE` is +0, no memory modification was in progress → safe to restart
-- If `ERESTORE` equals `SKEEP7` and is a valid erasable address (< 2000 octal), then memory was mid-modification → restore the backup and restart
-- Otherwise, memory might be corrupted → fall through to a full fresh start
+逻辑如下：
+- 如果 `ERESTORE` 为 +0，则没有内存修改正在进行中 → 可以安全重启
+- 如果 `ERESTORE` 等于 `SKEEP7` 且是有效的可擦除地址（< 2000 八进制），则内存正在修改中 → 恢复备份并重启
+- 否则，内存可能已损坏 → 退到完整的新启动
 
-This is a **transactional memory protection scheme**, implemented in 1960s assembly. If a restart catches the system mid-write, it rolls back the partial operation using the saved copies:
+这是一个**事务性内存保护方案**，用 1960 年代的汇编实现。如果重启在系统半途写入时发生，它使用保存的副本回滚部分操作：
 
 ```agc
         CA      SKEEP4
@@ -155,28 +156,28 @@ This is a **transactional memory protection scheme**, implemented in 1960s assem
 DORSTART TC     STARTSUB        # DO INITIALIZATION AFTER ERASE RESTORE.
 ```
 
-### 1.4 What Restart Preserves vs. Destroys
+### 1.4 重启保留与销毁的内容
 
-| Preserved Across Restart | Destroyed / Reinitialized |
-|--------------------------|---------------------------|
-| Phase table entries (if consistent) | Waitlist (all pending timed tasks) |
-| Flag words (mostly) | Executive job table (all VAC areas) |
-| Engine on/off state | Display state |
-| IMU coarse align state | DSKY registers |
-| Gimbal lock / no-attitude lamps | Pending I/O |
-| Navigation state vectors | DAP transient state |
-| REDOCTR (incremented) | Mark system |
-| ERCOUNT, FAILREG | Monitor displays |
+| 重启保留 | 销毁/重新初始化 |
+|---------|--------------|
+| 相位表条目（如果一致） | 等待列表（所有待处理的定时任务） |
+| 标志字（大部分） | 执行作业表（所有 VAC 区域） |
+| 引擎开/关状态 | 显示状态 |
+| IMU 粗对准状态 | DSKY 寄存器 |
+| 万向锁/无姿态指示灯 | 待处理 I/O |
+| 导航状态向量 | DAP 瞬态状态 |
+| REDOCTR（已递增） | 标记系统 |
+| ERCOUNT、FAILREG | 监控显示 |
 
-The key insight: **program phases are preserved, but the scheduling infrastructure is wiped clean**. The waitlist and executive are reinitialized from scratch. Then the phase table is consulted to figure out what was running and what needs to be restarted.
+关键洞见：**程序相位被保留，但调度基础设施被彻底清除**。等待列表和执行模块从头重新初始化。然后查询相位表来确定正在运行什么以及什么需要重启。
 
 ---
 
-## 2. The Restart Logic: Phase Tables and Priority Decisions
+## 2. 重启逻辑：相位表与优先级决策
 
-### 2.1 The Common Initialization Subroutine
+### 2.1 公共初始化子程序
 
-Both fresh start and restart call `STARTSUB`, which performs the core system initialization:
+新启动和重启都调用 `STARTSUB`，执行核心系统初始化：
 
 ```agc
 STARTSUB  CAF     LDNPHAS1      # SET POINTER SO NEXT 20MS DOWNRUPT WILL
@@ -184,11 +185,11 @@ STARTSUB  CAF     LDNPHAS1      # SET POINTER SO NEXT 20MS DOWNRUPT WILL
                                 # INTERRUPTED AND START SENDING FROM THE
                                 # BEGINNING OF THE CURRENT DOWNLIST.
 ```
-*(page 219)*
+*（第 219 页）*
 
-`STARTSUB` then:
+`STARTSUB` 然后：
 
-1. **Resets the timers** — TIME3, TIME4, TIME5 are loaded to their maximum values (triggering their interrupts shortly):
+1. **重置定时器**——TIME3、TIME4、TIME5 被加载到最大值（很快触发它们的中断）：
    ```agc
    STARTSB1  CAF     POSMAX
              TS      TIME3
@@ -197,9 +198,9 @@ STARTSUB  CAF     LDNPHAS1      # SET POINTER SO NEXT 20MS DOWNRUPT WILL
              AD      NEGONE
              TS      TIME5
    ```
-   TIME3 is loaded first (drives the Waitlist), then TIME4 (DSKY) gets POSMAX-2, then TIME5 (DAP) gets POSMAX-3. The staggering prevents all three interrupt handlers from colliding.
+   TIME3 首先加载（驱动等待列表），然后 TIME4（DSKY）获得 POSMAX-2，再 TIME5（DAP）获得 POSMAX-3。交错排列防止三个中断处理程序互相碰撞。
 
-2. **Disables TIME6** (the high-frequency jet timing counter):
+2. **禁用 TIME6**（高频喷气定时计数器）：
    ```agc
              CAF     POSMAX        # DISABLE TIME6 CLOCK.  JUST IN CASE A T6
              TS      T6NEXT        #   RUPT IS ALREADY IN THE PRIORITY CHAIN,
@@ -207,22 +208,22 @@ STARTSUB  CAF     LDNPHAS1      # SET POINTER SO NEXT 20MS DOWNRUPT WILL
              WAND    CHAN13        #   INEFFECTUAL.
    ```
 
-3. **Sets up the DAP idle routine** as the T5RUPT handler:
+3. **将 DAP 空闲例程设置为** T5RUPT 处理程序：
    ```agc
              EXTEND              # SET T5RUPT FOR DAPIDLER PROGRAM.
              DCA     IDLEADR
              DXCH    T5ADR
    ```
 
-Then `STARTSB2` (called on restart but not the initial part of fresh start) preserves engine state:
+然后 `STARTSB2`（在重启时调用，而非新启动的初始部分）保留引擎状态：
 ```agc
 STARTSB2  CAF     OCT30001      # DURING SOFTWARE RESTART, DO NOT DISTURB
           EXTEND                # ENGINE ON, OFF AND ISS WARNING.
           WAND    DSALMOUT
 ```
-The `WAND` (Write-AND) instruction masks the engine control channel, preserving only the engine on/off bit and the ISS warning. Everything else on that channel is cleared.
+`WAND`（写-与）指令屏蔽引擎控制通道，仅保留引擎开/关位和 ISS 警告。该通道上的其他所有内容都被清除。
 
-4. **Reinitializes the Waitlist** — all eight task slots are cleared:
+4. **重新初始化等待列表**——所有八个任务槽被清除：
    ```agc
              CAF     NEG1/2        # INITIALIZE WAITLIST DELTA-TS.
              TS      LST1 +7
@@ -230,9 +231,9 @@ The `WAND` (Write-AND) instruction masks the engine control channel, preserving 
              ...
              TS      LST1
    ```
-   `NEG1/2` (-0.5 in SP) marks each slot as "maximum time until expiry" — effectively empty. The task addresses (`LST2` through `LST2 +17D`) are loaded with the complement of `ENDTASK`, a sentinel that means "no task here."
+   `NEG1/2`（SP 中的 -0.5）将每个槽标记为"到到期的最长时间"——实际上是空的。任务地址（`LST2` 到 `LST2 +17D`）被加载为 `ENDTASK` 的补码，这是一个意为"这里没有任务"的哨兵。
 
-5. **Clears all Executive priority registers** — making all 8 job slots available:
+5. **清除所有执行优先级寄存器**——使所有 8 个作业槽可用：
    ```agc
              CS      ZERO          # MAKE ALL EXECUTIVE REGISTER SETS
              TS      PRIORITY      # AVAILABLE.
@@ -244,15 +245,15 @@ The `WAND` (Write-AND) instruction masks the engine control channel, preserving 
              TS      PRIORITY +72D
              TS      PRIORITY +84D
    ```
-   `CS ZERO` produces -0 (all ones), which in the Executive means "this slot is free." Each VAC area is 12 words apart (one priority word + working storage), so the +12D, +24D, etc. offsets hit each priority register.
+   `CS ZERO` 产生 -0（全 1），在执行模块中表示"此槽是空闲的"。每个 VAC 区域相隔 12 个字（一个优先级字 + 工作存储），所以 +12D、+24D 等偏移命中每个优先级寄存器。
 
-6. **Marks no active job**:
+6. **标记无活跃作业**：
    ```agc
              TS      DSRUPTSW
              TS      NEWJOB        # SHOWS NO ACTIVE JOBS.
    ```
 
-7. **Makes all VAC areas available** by linking them into a free list:
+7. **通过将所有 VAC 区域链入空闲列表使其可用**：
    ```agc
              CAF     VAC1ADRC      # MAKE ALL VAC AREAS AVAILABLE.
              TS      VAC1USE
@@ -262,11 +263,11 @@ The `WAND` (Write-AND) instruction masks the engine control channel, preserving 
              TS      VAC3USE
              ...
    ```
-   `LTHVACA` is 44 decimal — the spacing between VAC areas. Each `VACnUSE` register points to the start of its VAC area, forming a linked free list.
+   `LTHVACA` 是十进制 44——VAC 区域之间的间距。每个 `VACnUSE` 寄存器指向其 VAC 区域的起始，形成链式空闲列表。
 
-### 2.2 Phase Table Verification
+### 2.2 相位表验证
 
-After the common initialization, the restart path (at `GOPROG3`) performs the critical phase table verification:
+公共初始化之后，重启路径（在 `GOPROG3`）执行关键的相位表验证：
 
 ```agc
 GOPROG3     CAF     NUMGRPS       # VERIFY PHASE TABLE AGREEMENTS
@@ -282,26 +283,26 @@ PCLOOP      TS      MPAC +5
             TCF     PTBAD
             TCF     PTBAD
 ```
-*(page 216–217)*
+*（第 216–217 页）*
 
-This is an integrity check. For each restart group (1 through 5, since `NUMGRPS` equals `FIVE`), the system stores *two* copies of the phase: `PHASEn` and `-PHASEn`. The `-PHASEn` value should be the 1's complement of `PHASEn`. The check works as follows:
+这是完整性检查。对于每个重启组（1 到 5，因为 `NUMGRPS` 等于 `FIVE`），系统存储相位的*两个*副本：`PHASEn` 和 `-PHASEn`。`-PHASEn` 的值应该是 `PHASEn` 的 1 的补码。检查工作如下：
 
-1. `DCA -PHASEn` loads the complement into A and the direct value into L
-2. `RXOR LCHAN` XORs A with L (via the L "channel")
-3. If they're proper complements, the XOR produces -0 (all ones)
-4. `CCS A` on -0 falls through to the fourth case (the -0 case), which continues the loop
+1. `DCA -PHASEn` 将补码加载到 A，直接值加载到 L
+2. `RXOR LCHAN` 将 A 与 L 进行 XOR（通过 L "通道"）
+3. 如果它们是适当的补码，XOR 产生 -0（全 1）
+4. `-0` 上的 `CCS A` 落到第四种情况（-0 情况），继续循环
 
-If any phase pair disagrees, the CCS falls into one of the first three cases → `PTBAD`:
+如果任何相位对不一致，CCS 落入前三种情况之一 → `PTBAD`：
 ```agc
 PTBAD       TC      ALARM         # SET ALARM TO SHOW PHASE TABLE FAILURE.
             OCT     1107
             TCF     DOFSTRT1
 ```
-Alarm 1107 is raised and the system falls back to `DOFSTRT1` — essentially a fresh start (but without turning off the engine, which is the distinction between `DOFSTART` and `DOFSTRT1`).
+触发警报 1107，系统回退到 `DOFSTRT1`——本质上是新启动（但不关闭引擎，这是 `DOFSTART` 和 `DOFSTRT1` 之间的区别）。
 
-### 2.3 Restarting Active Programs
+### 2.3 重启活跃程序
 
-If all phase tables are consistent, the code proceeds to restart whatever was running:
+如果所有相位表都一致，代码继续重启正在运行的内容：
 
 ```agc
             CAF     NUMGRPS       # SEE IF ANY GROUPS RUNNING.
@@ -318,17 +319,17 @@ PACTIVE     TS      MPAC
             CA      RACTCADR
             TC      SWCALL        # MUST RETURN TO SWRETURN.
 ```
-*(page 217)*
+*（第 217 页）*
 
-For each restart group, `CCS PHASE1` (indexed by group number) tests the phase value:
-- If positive (group is active), execution goes to `PACTIVE`
-- If +0, the group is not running → `PINACT`
+对于每个重启组，`CCS PHASE1`（以组编号为索引）测试相位值：
+- 如果为正（组是活跃的），执行转到 `PACTIVE`
+- 如果为 +0，组未运行 → `PINACT`
 
-`PACTIVE` calls `RESTARTS` (via `RACTCADR`, which is `CADR RESTARTS`) through `SWCALL`. The `RESTARTS` routine (defined elsewhere) uses the phase value to determine exactly where in the program to resume. Each program registers its restart points by storing a phase number, and the restart dispatcher uses that number to vector to the correct recovery point.
+`PACTIVE` 通过 `SWCALL` 调用 `RESTARTS`（通过 `RACTCADR`，即 `CADR RESTARTS`）。`RESTARTS` 例程（在其他地方定义）使用相位值来确定程序在哪里恢复。每个程序通过存储相位号来注册其重启点，重启分派器使用该号码向量到正确的恢复点。
 
-The phase mechanism works like **checkpoints**: a program periodically calls `PHASCHNG` to update its phase, saying "I've reached step N." If a restart occurs, the system looks at the phase and re-enters the program at the checkpoint corresponding to that phase.
+相位机制像**检查点**一样工作：程序定期调用 `PHASCHNG` 来更新其相位，说"我已到达步骤 N"。如果发生重启，系统查看相位并在对应于该相位的检查点重新进入程序。
 
-After processing all groups:
+处理完所有组后：
 ```agc
 PINACT      CCS     MPAC +5       # PROCESS ALL RESTART GROUPS.
             TCF     NXTRST
@@ -342,11 +343,11 @@ PINACT      CCS     MPAC +5       # PROCESS ALL RESTART GROUPS.
             TCF     ENDRSTRT      # YES
 ```
 
-If *any* group had an active phase (`MPAC +6` > 0), the system proceeds to `ENDRSTRT` — normal operation resumes. If *no* groups were active but the mode register is -0, it also proceeds. Otherwise, it goes to `GOTOPOOH` (P00) — the idle program.
+如果*任何*组有活跃相位（`MPAC +6` > 0），系统继续到 `ENDRSTRT`——恢复正常操作。如果*没有*组活跃但模式寄存器为 -0，也继续。否则，转到 `GOTOPOOH`（P00）——空闲程序。
 
-### 2.4 Engine State Preservation on Restart
+### 2.4 重启时的引擎状态保留
 
-One of the most critical aspects of the restart logic is engine management. At `SETINFL` (the restart-specific path after `DORSTART`), the code explicitly checks and preserves engine state:
+重启逻辑最关键的方面之一是引擎管理。在 `SETINFL`（`DORSTART` 后的重启特定路径），代码明确检查并保留引擎状态：
 
 ```agc
             CA      BIT4          # TURN ON THROTTLE COUNTER
@@ -365,33 +366,33 @@ One of the most critical aspects of the restart logic is engine management. At `
             WOR     DSALMOUT      # TURN ENGINE OFF
             TCF     GOPROG3
 ```
-*(page 216)*
+*（第 216 页）*
 
-The code checks `ENGONBIT` in `FLAGWRD5`. If the engine was on before the restart, it turns it back on. If it was off, it turns it off. **The engine state survives the restart.** During the landing, the descent engine was firing continuously — if a restart had killed the engine, the LM would have crashed.
+代码检查 `FLAGWRD5` 中的 `ENGONBIT`。如果引擎在重启前处于开启状态，则重新打开它。如果处于关闭状态，则关闭它。**引擎状态在重启后得以保留。** 在着陆期间，下降引擎持续点火——如果重启终止了引擎，登月舱将会坠毁。
 
 ---
 
-## 3. The 1202/1201 Alarm: Executive Overflow
+## 3. 1202/1201 报警：执行溢出
 
-### 3.1 Where the Alarm Originates
+### 3.1 报警的起源
 
-The 1202 alarm is **not generated in either of these two files**. It originates in the Executive module (specifically in `EXEC` or `FINDVAC`) when a call to schedule a new job finds all VAC areas occupied. The Executive would call:
+1202 报警**不在这两个文件中生成**。它起源于执行模块（具体在 `EXEC` 或 `FINDVAC` 中），当调度新作业的请求发现所有 VAC 区域都被占用时。执行模块会调用：
 
 ```agc
         TC      ALARM
         OCT     1202
 ```
 
-or for 1201 (no VAC areas available for a different scheduling path):
+或对于 1201（不同调度路径没有 VAC 区域可用）：
 
 ```agc
         TC      ALARM
         OCT     1201
 ```
 
-What we *can* trace in `ALARM_AND_ABORT.agc` is exactly what happens when that `TC ALARM` executes.
+我们*能在* `ALARM_AND_ABORT.agc` 中追踪的，正是当该 `TC ALARM` 执行时发生了什么。
 
-### 3.2 The ALARM Subroutine
+### 3.2 ALARM 子程序
 
 ```agc
 ALARM       INHINT
@@ -402,19 +403,19 @@ ALARM2      TS      ALMCADR
             CA      0
 BORTENT     TS      L
 ```
-*(ALARM_AND_ABORT.agc, page 1381)*
+*（ALARM_AND_ABORT.agc，第 1381 页）*
 
-Step by step:
+逐步分析：
 
-1. **`INHINT`** — Disable interrupts immediately. This is critical: you don't want another interrupt firing while you're in the middle of recording the alarm.
+1. **`INHINT`**——立即禁用中断。这至关重要：在记录报警的过程中，你不希望另一个中断触发。
 
-2. **`CA Q` / `TS ALMCADR`** — Save the return address. Q holds the address of the word *after* `TC ALARM`, which is the alarm code itself. Saving Q to `ALMCADR` records where the alarm came from.
+2. **`CA Q` / `TS ALMCADR`**——保存返回地址。Q 持有 `TC ALARM` *之后*那个字的地址，即报警代码本身。将 Q 保存到 `ALMCADR` 记录了报警的来源。
 
-3. **`INDEX Q` / `CA 0`** — This is an elegant AGC idiom. `INDEX Q` modifies the next instruction by adding Q to its address. `CA 0` becomes `CA Q` effectively loading the word at address Q — which is the octal alarm code (e.g., `OCT 1202`). The alarm code is now in A.
+3. **`INDEX Q` / `CA 0`**——这是一个优雅的 AGC 习语。`INDEX Q` 通过将 Q 加到下一条指令的地址来修改它。`CA 0` 有效地变为 `CA Q`，加载地址 Q 处的字——即八进制报警代码（例如 `OCT 1202`）。现在 A 中是报警代码。
 
-4. **`TS L`** — Store the alarm code in L (the lower register).
+4. **`TS L`**——将报警代码存入 L（低寄存器）。
 
-### 3.3 Recording the Alarm
+### 3.3 记录报警
 
 ```agc
 PRIOENT     CA      BBANK
@@ -426,9 +427,9 @@ LARMENT     CA      Q             # STORE RETURN FOR ALARM
             TS      ITEMP1
 ```
 
-The current bank state (BBANK + superbank bits) is saved to `ALMCADR +1`, forming a complete 2CADR (double-word address) of where the alarm originated. This is the "who called me" record that would appear in telemetry.
+当前 bank 状态（BBANK + 超级 bank 位）保存到 `ALMCADR +1`，形成报警起源处的完整 2CADR（双字地址）。这是将出现在遥测数据中的"谁调用了我"记录。
 
-### 3.4 The Failure Register Cascade
+### 3.4 故障寄存器级联
 
 ```agc
 CHKFAIL1    CCS     FAILREG       # IS ANYTHING IN FAILREG
@@ -449,23 +450,23 @@ FAIL3       CA      FAILREG +2
             TCF     MULTEXIT
 ```
 
-There are three failure registers. The code tries to store the alarm code (still in L) into the first empty one:
+有三个故障寄存器。代码尝试将报警代码（仍在 L 中）存入第一个空的：
 
-1. `CCS FAILREG` — if FAILREG is non-zero (positive), it already has an alarm → try the next register
-2. If FAILREG is +0 (empty), `LXCH FAILREG` swaps L (alarm code) into FAILREG → go light the lamp
-3. Same pattern for `FAILREG +1` and `FAILREG +2`
+1. `CCS FAILREG`——如果 FAILREG 非零（正值），则已有报警 → 尝试下一个寄存器
+2. 如果 FAILREG 为 +0（空），`LXCH FAILREG` 将 L（报警代码）交换到 FAILREG → 点亮指示灯
+3. `FAILREG +1` 和 `FAILREG +2` 同样模式
 
-If all three are full:
+如果三个都满：
 ```agc
 MULTFAIL    CA      L
             AD      BIT15
             TS      FAILREG +2
 ```
-The current alarm code is OR'd with BIT15 (setting the sign bit) and stored in `FAILREG +2`, overwriting whatever was there. The set sign bit serves as a flag meaning "multiple alarms have occurred — this register has been overwritten."
+当前报警代码与 BIT15 进行 OR（设置符号位），存入 `FAILREG +2`，覆盖原来的内容。设置符号位作为标志，表示"已发生多次报警——此寄存器已被覆盖"。
 
-### 3.5 The Program Alarm Light
+### 3.5 程序报警指示灯
 
-For the *first* alarm, `PROGLARM` lights the PROG lamp on the DSKY:
+对于*第一个*报警，`PROGLARM` 点亮 DSKY 上的 PROG 灯：
 
 ```agc
 PROGLARM    CS      DSPTAB +11D
@@ -473,9 +474,9 @@ PROGLARM    CS      DSPTAB +11D
             ADS     DSPTAB +11D
 ```
 
-`OCT40400` = bits 9 and 15. The `CS`/`MASK`/`ADS` sequence sets these bits in the display table, which turns on the PROGRAM alarm indicator on the DSKY. This is the light that Armstrong and Aldrin saw.
+`OCT40400` = 第 9 位和第 15 位。`CS`/`MASK`/`ADS` 序列在显示表中设置这些位，打开 DSKY 上的程序报警指示器。这就是 Armstrong 和 Aldrin 看到的那盏灯。
 
-### 3.6 Return to Caller
+### 3.6 返回调用方
 
 ```agc
 MULTEXIT    XCH     ITEMP1        # OBTAIN RETURN ADDRESS IN A
@@ -484,15 +485,15 @@ MULTEXIT    XCH     ITEMP1        # OBTAIN RETURN ADDRESS IN A
             TC      1
 ```
 
-The return address (saved earlier in `ITEMP1`) is restored, interrupts are re-enabled (`RELINT`), and execution returns to the instruction *after* the alarm code. `INDEX A` / `TC 1` is the AGC idiom for "jump to A+1" — i.e., the word after the `OCT 1202` constant.
+返回地址（之前保存在 `ITEMP1` 中）被恢复，中断被重新启用（`RELINT`），执行返回到报警代码*之后*的指令。`INDEX A` / `TC 1` 是 AGC 的"跳转到 A+1"习语——即 `OCT 1202` 常量之后的字。
 
-**This is the critical point: `ALARM` returns to the caller.** For a 1202, the Executive would then typically invoke `BAILOUT` or proceed to a restart via other means. But `ALARM` itself is non-abortive — it records and returns.
+**这是关键点：`ALARM` 返回到调用方。** 对于 1202，执行模块通常会调用 `BAILOUT` 或通过其他方式进行重启。但 `ALARM` 本身是非中止的——它记录并返回。
 
-### 3.7 BAILOUT vs. POODOO: Abortive Alarm Paths
+### 3.7 BAILOUT 与 POODOO：中止报警路径
 
-The file provides two *abortive* alarm paths for more severe situations:
+该文件为更严重的情况提供了两条*中止*报警路径：
 
-**BAILOUT** — Used when a program hits an unrecoverable but non-fatal error:
+**BAILOUT**——当程序遇到不可恢复但非致命的错误时使用：
 ```agc
 BAILOUT     INHINT
             CA      Q
@@ -501,7 +502,7 @@ BAILOUT     INHINT
             CAF     0
             TC      BORTENT
 ```
-After recording the alarm, it falls through to:
+记录报警后，落入：
 ```agc
 WHIMPER     CA      TWO
             AD      Z
@@ -511,9 +512,9 @@ WHIMPER     CA      TWO
             CADR    ENEMA
 ```
 
-This is a clever trick. `RESUME` is the "return from interrupt" instruction, but BAILOUT isn't an ISR. By setting `BRUPT` to point to the `TC POSTJUMP` instruction and then executing `RESUME`, the code forces a jump to `ENEMA` — which does a partial restart (`STARTSB1` + `GOPROG2A`), preserving more state than a full restart but still reinitializing the scheduler.
+这是一个巧妙的技巧。`RESUME` 是"从中断返回"指令，但 BAILOUT 不是 ISR。通过将 `BRUPT` 设置为指向 `TC POSTJUMP` 指令然后执行 `RESUME`，代码强制跳转到 `ENEMA`——执行部分重启（`STARTSB1` + `GOPROG2A`），保留比完全重启更多的状态，同时仍然重新初始化调度器。
 
-**POODOO** — The "abort" path (note the label `ABORT EQUALS WHIMPER`):
+**POODOO**——"中止"路径（注意标签 `ABORT EQUALS WHIMPER`）：
 ```agc
 POODOO      INHINT
             CA      Q
@@ -522,14 +523,14 @@ ABORT2      TS      ALMCADR
             CAF     0
             TC      BORTENT
 ```
-After recording the alarm, POODOO sets up restart group 4:
+记录报警后，POODOO 设置重启组 4：
 ```agc
             CAF     OCT35         # 4.35SPOT FOR GOPOODOO
             TS      L
             COM
             DXCH    -PHASE4
 ```
-This registers `GOPOODOO` as the phase-4 restart point. Then `GOPOODOO` does the cleanup:
+这将 `GOPOODOO` 注册为相位 4 的重启点。然后 `GOPOODOO` 进行清理：
 ```agc
 GOPOODOO    INHINT
             TC      BANKCALL      # RESET STATEFLG, REINTFLG, AND NODOFLAG.
@@ -545,7 +546,7 @@ GOPOODOO    INHINT
             TCF     WHIMPER
 ```
 
-The `FLAGS` subroutine (page 1385) clears `STATEBIT`, `REINTBIT`, and `NODOBIT`:
+`FLAGS` 子程序（第 1385 页）清除 `STATEBIT`、`REINTBIT` 和 `NODOBIT`：
 ```agc
 FLAGS       CS      STATEBIT
             MASK    FLAGWRD3
@@ -559,9 +560,9 @@ FLAGS       CS      STATEBIT
             TC      Q
 ```
 
-### 3.8 The MR.KLEAN Hierarchy
+### 3.8 MR.KLEAN 层次结构
 
-Back in `FRESH_START_AND_RESTART.agc`, the phase-clearing routines reveal the priority hierarchy:
+回到 `FRESH_START_AND_RESTART.agc`，相位清除例程揭示了优先级层次结构：
 
 ```agc
 MR.KLEAN    INHINT
@@ -585,49 +586,49 @@ V37KLEAN    EXTEND
             DXCH    -PHASE6
             TC      Q
 ```
-*(page 213–214)*
+*（第 213–214 页）*
 
-Three nested entry points provide three levels of cleanup:
+三个嵌套入口点提供三个级别的清理：
 
-| Entry Point | Groups Cleared | Use Case |
-|-------------|---------------|----------|
-| `V37KLEAN` | 1, 3, 5, 6 | Kill navigation/misc but keep P20/P25 and current program |
-| `P00KLEAN` | 4, 1, 3, 5, 6 | Kill current program too, keep only P20/P25 |
-| `MR.KLEAN` | 2, 4, 1, 3, 5, 6 | Kill everything |
+| 入口点 | 清除的组 | 使用情况 |
+|--------|---------|---------|
+| `V37KLEAN` | 1、3、5、6 | 终止导航/杂项，保留 P20/P25 和当前程序 |
+| `P00KLEAN` | 4、1、3、5、6 | 也终止当前程序，仅保留 P20/P25 |
+| `MR.KLEAN` | 2、4、1、3、5、6 | 终止所有 |
 
-`DCA NEG0` / `DXCH -PHASEn` stores -0 in both the phase and its complement — marking the group as inactive. The order matters: group 4 (which typically holds the currently running major program) is cleared before groups 1/3/5/6, but *after* the caller has already registered its own restart point in group 4.
+`DCA NEG0` / `DXCH -PHASEn` 在相位和其补码中都存储 -0——将组标记为非活跃。顺序很重要：组 4（通常持有当前运行的主程序）在组 1/3/5/6 之前被清除，但在调用方已经在组 4 中注册了自己的重启点*之后*。
 
 ---
 
-## 4. Tracing the 1202 Path During the Landing
+## 4. 追踪着陆期间的 1202 路径
 
-### 4.1 The Scenario
+### 4.1 场景
 
-During the Apollo 11 descent, the rendezvous radar was left in a mode that generated excessive interrupts (a RUPT10 every radar cycle). Each interrupt consumed CPU time for the unprogrammed counter-increment sequences. The Executive's job queue filled up because:
+在阿波罗 11 号下降过程中，交会雷达被留在了一种会产生过多中断的模式中（每个雷达周期一次 RUPT10）。每次中断都消耗 CPU 时间用于未编程计数器增量序列。执行模块的作业队列填满是因为：
 
-1. The landing guidance (P63, then P64) was running as a high-priority job
-2. The Servicer (which computed navigation updates) was running
-3. Radar processing tasks were being scheduled
-4. The waitlist was firing tasks that needed VAC areas
-5. With all 8 VAC areas occupied, the next `FINDVAC` call generated alarm 1202
+1. 着陆制导（P63，然后 P64）作为高优先级作业运行
+2. 服务程序（计算导航更新的程序）在运行
+3. 雷达处理任务正在被调度
+4. 等待列表正在触发需要 VAC 区域的任务
+5. 所有 8 个 VAC 区域被占用后，下一次 `FINDVAC` 调用产生了 1202 报警
 
-### 4.2 Why the Landing Survived
+### 4.2 为什么着陆得以幸存
 
-The chain of survival works through several mechanisms:
+生存链通过几种机制发挥作用：
 
-**1. ALARM is non-abortive.** The `ALARM` subroutine (page 1381) only records the alarm and lights the PROG lamp. It returns to the caller. The Executive could then decide what to do — typically, it would fail to schedule the low-priority task (the one that overflowed) while the high-priority task (landing guidance) continued to hold its VAC area.
+**1. ALARM 是非中止的。** `ALARM` 子程序（第 1381 页）只记录报警并点亮 PROG 灯。它返回给调用方。执行模块然后可以决定做什么——通常，它无法调度低优先级任务（溢出的那个），而高优先级任务（着陆制导）继续持有其 VAC 区域。
 
-**2. The restart preserves program phases.** When a restart occurs (whether triggered by the overflow or by BAILOUT), `STARTSUB` clears the waitlist and executive but leaves the phase table intact. The landing guidance had registered its phase before the overflow occurred.
+**2. 重启保留程序相位。** 当重启发生（无论是由溢出触发还是由 BAILOUT 触发），`STARTSUB` 清除等待列表和执行模块，但保留相位表完整。着陆制导在溢出发生之前已经注册了其相位。
 
-**3. Priority-based restart.** The `PACTIVE`/`NXTRST` loop in `GOPROG3` processes all restart groups. Each group's restart handler (`RESTARTS`) would re-schedule its job via `FINDVAC`. But now the system is clean — all 8 VAC areas are free. The high-priority landing program gets its VAC area first. Lower-priority tasks that caused the overflow may or may not fit, but the system no longer cares — the essential work runs.
+**3. 基于优先级的重启。** `GOPROG3` 中的 `PACTIVE`/`NXTRST` 循环处理所有重启组。每个组的重启处理程序（`RESTARTS`）会通过 `FINDVAC` 重新调度其作业。但现在系统是干净的——所有 8 个 VAC 区域都是空闲的。高优先级着陆程序首先获得其 VAC 区域。导致溢出的低优先级任务可能适合也可能不适合，但系统不再关心——基本工作在运行。
 
-**4. Engine state survives.** The descent engine continues firing because the restart path at `SETINFL` explicitly preserves `ENGONBIT` and restores the engine command to the hardware channel.
+**4. 引擎状态得以保留。** 下降引擎继续点火，因为 `SETINFL` 处的重启路径明确保留了 `ENGONBIT` 并将引擎命令恢复到硬件通道。
 
-**5. Flags preserve context.** The flag words (`FLAGWRD0` through `FLAGWRD11`) survive the restart. They tell the restarted programs what state they were in — for example, whether the landing radar had been incorporated, whether guidance was in the P63 braking phase or P64 approach phase.
+**5. 标志保留上下文。** 标志字（`FLAGWRD0` 到 `FLAGWRD11`）在重启后仍然存在。它们告诉重启的程序它们所处的状态——例如，着陆雷达是否已被纳入，制导是否处于 P63 制动阶段或 P64 进近阶段。
 
-### 4.3 The V37 Mechanism and Priority Shedding
+### 4.3 V37 机制与优先级卸载
 
-The Verb 37 (program change) mechanism in `V37` (page 227) reveals how the system manages program priority. When deciding whether to keep or kill programs during a mode change, the code checks specific flags:
+`V37`（第 227 页）中的 Verb 37（程序更改）机制揭示了系统如何管理程序优先级。在决定模式更改时是否保留或终止程序时，代码检查特定标志：
 
 ```agc
 V37RET      CS      FLAGWRD0      # IS P20 OR P22 RUNNING?
@@ -637,59 +638,59 @@ V37RET      CS      FLAGWRD0      # IS P20 OR P22 RUNNING?
             TCF     2.7SPT        # YES. DO 2.7SPOT
 ```
 
-P20 (rendezvous tracking) and P25 run in restart group 2. The landing guidance runs in group 4. During the 1202 restarts, the group structure meant:
+P20（交会跟踪）和 P25 在重启组 2 中运行。着陆制导在组 4 中运行。在 1202 重启期间，组结构意味着：
 
-- Group 4 (landing) → restarted at its registered phase → P63/P64 resumes
-- Group 2 (if P20 was running) → also restarted, but radar processing tasks that hadn't registered phases were lost
-- Unphased tasks (the ones causing the overflow) → gone, which is exactly what you want
-
----
-
-## 5. The Design Philosophy
-
-### 5.1 Asynchronous Restart Architecture
-
-Hamilton's team designed the system around a principle that was radical for the 1960s and remains uncommon today: **any computation should be interruptible and restartable at any point, with the system automatically recovering to a known-good state.**
-
-This required:
-- **Phase registration**: Every significant program checkpoint writes a phase number, creating a trail of breadcrumbs
-- **Dual-copy integrity**: Phase values are stored twice (as value and complement), allowing the restart code to detect corruption
-- **Idempotent recovery**: Restart handlers must be safe to call even if the original computation partially completed
-- **Priority-based triage**: When resources are scarce, the system sheds low-priority work automatically
-
-### 5.2 Comparison to Modern Approaches
-
-| AGC Approach | Modern Equivalent |
-|-------------|-------------------|
-| Phase table registration | Transaction logging / Write-Ahead Log |
-| ERESTORE backup/restore | Database savepoints / journaling |
-| Dual-copy phase check | Checksummed metadata |
-| Priority-based restart | Kubernetes pod priority / preemption |
-| ALARM (non-abortive) | Circuit breaker pattern (half-open) |
-| BAILOUT → WHIMPER | Graceful degradation / bulkhead pattern |
-| MR.KLEAN hierarchy | Cascading circuit breakers |
-| GOJAM → GOPROG | Erlang supervisor restart strategies |
-
-The closest modern analog is Erlang's supervisor tree: "let it crash, then restart in a known-good state." But the AGC predates Erlang by 30 years, and does it with 2K of RAM and no hardware stack.
-
-### 5.3 What Would Have Happened Without This Design
-
-**Scenario A: Simple watchdog timer (restart everything on overflow)**
-The engine would have been shut off. The navigation state would be lost. The astronauts would abort.
-
-**Scenario B: Halt on error (modern assertion/panic)**
-The computer stops. The engine stops. The LM crashes.
-
-**Scenario C: Ignore and continue (swallow the error)**
-The Executive's job table becomes corrupt. Subsequent job scheduling produces undefined behavior. The guidance equations stop updating. The LM drifts off course.
-
-**What actually happened:** The system restarted, shed the excess radar processing, and the landing guidance resumed within milliseconds. Armstrong and Aldrin saw the PROG light and heard "1202" called out, but the computer was already recovered by the time Houston said "we're go on that alarm." The 60-second delay in Houston's response wasn't the computer waiting — it was the humans catching up to the machine.
+- 组 4（着陆）→ 在其注册相位处重启 → P63/P64 恢复
+- 组 2（如果 P20 正在运行）→ 也重启，但未注册相位的雷达处理任务丢失
+- 未注册相位的任务（导致溢出的那些）→ 消失，这正是你想要的
 
 ---
 
-## 6. The CURTAINS Subroutine: When Even Restart Can't Help
+## 5. 设计哲学
 
-There's one more notable routine in `ALARM_AND_ABORT.agc`:
+### 5.1 异步重启架构
+
+Hamilton 的团队围绕一个在 1960 年代是激进的、今天仍然罕见的原则设计了系统：**任何计算都应该在任何点可中断和可重启，系统自动恢复到已知良好状态。**
+
+这需要：
+- **相位注册**：每个重要的程序检查点写入相位号，创建面包屑踪迹
+- **双副本完整性**：相位值存储两次（作为值和补码），允许重启代码检测损坏
+- **幂等恢复**：重启处理程序即使在原始计算部分完成的情况下也必须可以安全调用
+- **基于优先级的分类**：当资源稀缺时，系统自动卸载低优先级工作
+
+### 5.2 与现代方法的比较
+
+| AGC 方法 | 现代等价物 |
+|---------|---------|
+| 相位表注册 | 事务日志/预写日志 |
+| ERESTORE 备份/恢复 | 数据库保存点/日志记录 |
+| 双副本相位检查 | 带校验和的元数据 |
+| 基于优先级的重启 | Kubernetes Pod 优先级/抢占 |
+| ALARM（非中止） | 断路器模式（半开） |
+| BAILOUT → WHIMPER | 优雅降级/舱壁模式 |
+| MR.KLEAN 层次结构 | 级联断路器 |
+| GOJAM → GOPROG | Erlang 监督器重启策略 |
+
+最接近的现代类比是 Erlang 的监督树："让它崩溃，然后在已知良好状态重启。"但 AGC 比 Erlang 早 30 年，而且只用 2K RAM 和没有硬件堆栈实现了这一切。
+
+### 5.3 没有这种设计会发生什么
+
+**场景 A：简单的看门狗定时器（溢出时重启一切）**
+引擎将被关闭。导航状态将丢失。宇航员将中止任务。
+
+**场景 B：遇到错误时停机（现代断言/恐慌）**
+计算机停止。引擎停止。登月舱坠毁。
+
+**场景 C：忽略并继续（吞掉错误）**
+执行模块的作业表损坏。后续作业调度产生未定义行为。制导方程停止更新。登月舱偏离航线。
+
+**实际发生的事情：** 系统重启，卸载了多余的雷达处理，着陆制导在毫秒内恢复。Armstrong 和 Aldrin 看到了 PROG 灯，听到了"1202"被呼出，但当休斯顿说"我们对那个报警放行"时，计算机已经恢复了。休斯顿 60 秒的响应延迟不是计算机在等待——而是人类在追赶机器。
+
+---
+
+## 6. CURTAINS 子程序：当重启也无济于事时
+
+`ALARM_AND_ABORT.agc` 中还有一个值得注意的例程：
 
 ```agc
 CURTAINS    INHINT
@@ -698,11 +699,11 @@ CURTAINS    INHINT
 OCT217      OCT     00217
             TC      ALMCADR       # RETURN TO USER
 ```
-*(page 1383)*
+*（第 1383 页）*
 
-`CURTAINS` generates alarm 00217 and *returns to the caller*. Despite its dramatic name, it's actually a non-fatal alarm — it records the issue and lets the calling program decide what to do. The name suggests the developers had a sense of humor about catastrophic situations.
+`CURTAINS` 产生报警 00217 并*返回给调用方*。尽管名字听起来很戏剧化，它实际上是一个非致命报警——它记录问题并让调用程序决定如何处理。这个名字表明开发者对灾难性情况有一定的幽默感。
 
-And then there's `CCSHOLE`:
+还有 `CCSHOLE`：
 ```agc
 CCSHOLE     INHINT
             CA      Q
@@ -710,14 +711,14 @@ CCSHOLE     INHINT
 OCT1103     OCT     1103
 ```
 
-This handles the case where a `CCS` instruction encounters an impossible value — a "hole" in the four-way skip logic. Alarm 1103: "the laws of arithmetic have been violated." If this ever fires, something has gone deeply wrong at the hardware level.
+这处理了 `CCS` 指令遇到不可能值的情况——四路跳过逻辑中的"洞"。报警 1103："算术定律已被违反。"如果这个报警触发，则硬件层面出了严重问题。
 
 ---
 
-## Summary
+## 总结
 
-The code in these two files represents one of the most sophisticated error-handling systems ever built for its era. The key architectural decisions — phase-based checkpointing, priority-aware restart, non-abortive alarms, and transactional memory protection — combined to create a system that could recover from overload in milliseconds. On July 20, 1969, with everything on the line, it worked exactly as designed.
+这两个文件中的代码代表了那个时代最复杂的错误处理系统之一。关键的架构决策——基于相位的检查点、优先级感知重启、非中止报警和事务性内存保护——共同创建了一个可以在毫秒内从过载中恢复的系统。1969 年 7 月 20 日，一切悬于一线，它完全按照设计工作。
 
-The 1202 alarm wasn't a bug. It was the system *working correctly under abnormal load* — detecting the overload, shedding non-essential work, preserving the critical path, and resuming before anyone on the ground fully understood what had happened.
+1202 报警不是一个错误。它是系统在*异常负载下正确运行*——检测到过载，卸载非关键工作，保留关键路径，并在地面上任何人充分理解发生了什么之前恢复。
 
-> **Note on uncertainty:** The exact path from Executive overflow → 1202 alarm → restart depends on code in the Executive module (`EXEC.agc`) and the Waitlist (`WAITLIST.agc`), which are not included in the source files provided here. The analysis of the alarm generation point and the specific FINDVAC overflow path is inferred from the architectural context and the alarm-handling code we can see. The restart recovery path through `GOPROG` → `STARTSUB` → phase table verification → `RESTARTS` is fully traceable in the provided source. The interaction between restart group assignments and specific programs (which group P63/P64 uses, how the radar processing registers its phases) would require examining additional modules like `P63-P68.agc` and the rendezvous radar routines.
+> **不确定性说明：** 从执行溢出 → 1202 报警 → 重启的确切路径取决于执行模块（`EXEC.agc`）和等待列表（`WAITLIST.agc`）中的代码，这些代码不包含在此处提供的源文件中。报警生成点和特定 FINDVAC 溢出路径的分析是从架构上下文和我们可以看到的报警处理代码推断的。通过 `GOPROG` → `STARTSUB` → 相位表验证 → `RESTARTS` 的重启恢复路径在提供的源代码中是完全可追踪的。重启组分配与特定程序之间的交互（P63/P64 使用哪个组，雷达处理如何注册其相位）需要检查 `P63-P68.agc` 和交会雷达例程等其他模块。

@@ -1,32 +1,32 @@
-# BURN, BABY, BURN — Master Ignition Routine
+# BURN, BABY, BURN — 主点火程序
 
-## The Code That Lit the Engine
+## 点燃引擎的代码
 
-This is the file that controlled engine ignition for the Lunar Module — the routine that fired the Descent Propulsion System (DPS) so Neil Armstrong and Buzz Aldrin could begin their powered descent to the Sea of Tranquility. It is also one of the most culturally rich files in the entire AGC codebase: a place where 1960s counterculture, Latin inscriptions, and meticulous systems engineering share the same pages.
+这是控制登月舱引擎点火的文件——该程序点燃了下降推进系统（DPS），使 Neil Armstrong 和 Buzz Aldrin 得以开始向静海的动力下降。它也是整个 AGC 代码库中文化内涵最为丰富的文件之一：1960年代的反主流文化、拉丁铭文与精密的系统工程在同一页面上共存。
 
-The routine was "conceived and executed, and (NOTA BENE) is maintained by Adler and Eyles" — Peter Adler and Don Eyles, two MIT Instrumentation Laboratory engineers who built the ignition sequencing for every engine burn the Lunar Module would ever perform.
+该程序"由 Adler 和 Eyles 构思并实现，且（NOTA BENE）由 Adler 和 Eyles 维护"——Peter Adler 和 Don Eyles 是麻省理工学院仪器实验室的两位工程师，他们为登月舱将要执行的每一次引擎点火构建了点火序列。
 
 ---
 
-## 1. Technical Function
+## 1. 技术功能
 
-### 1.1 What This Routine Actually Does
+### 1.1 该程序实际完成的工作
 
-BURN_BABY_BURN is the **Master Ignition Routine** — a generalized engine ignition sequencer used by five different LM programs:
+BURN_BABY_BURN 是**主点火程序**——一个通用引擎点火序列器，被五个不同的 LM 程序所使用：
 
-| Program | Purpose |
-|---------|---------|
-| **P12** | Powered Ascent (abort from surface) |
-| **P40** | DPS Burn (general purpose) |
-| **P42** | APS Burn (Ascent Propulsion System) |
-| **P61** | Not present in this table set, but referenced in comments |
-| **P63** | Braking Phase of Lunar Descent — *the landing burn* |
+| 程序 | 用途 |
+|---------|----------|
+| **P12** | 动力上升（从表面中止） |
+| **P40** | DPS 点火（通用目的） |
+| **P42** | APS 点火（上升推进系统） |
+| **P61** | 不在此表中，但在注释中有引用 |
+| **P63** | 月球下降制动阶段——*着陆点火* |
 
-Rather than writing separate ignition code for each program, Adler and Eyles built a **table-driven architecture**. Each program provides a table of constants and branch addresses, and the ignition routine indexes into these tables using the erasable register `WHICH` to customize its behavior.
+Adler 和 Eyles 没有为每个程序分别编写点火代码，而是构建了一个**表驱动架构**。每个程序提供一张常量表和分支地址，点火程序使用可擦除寄存器 `WHICH` 索引这些表以定制其行为。
 
-### 1.2 The Table-Driven Design
+### 1.2 表驱动设计
 
-The tables are the first thing in the file, and they're elegant. Each table entry at a given offset serves a specific purpose:
+文件中第一部分就是这些表，它们非常优雅。给定偏移量处的每个表项都有特定用途：
 
 ```
 P63TABLE    VN      0662            # (0)  Verb-Noun for display
@@ -43,16 +43,16 @@ P63TABLE    VN      0662            # (0)  Verb-Noun for display
             TCF     P63IGN          # (13) Program-specific ignition handler
 ```
 
-The routine accesses these via `INDEX WHICH` followed by `TCF`, `CA`, or `DCA` with the table offset. For example:
+程序通过 `INDEX WHICH` 后跟带表偏移量的 `TCF`、`CA` 或 `DCA` 来访问这些表。例如：
 
 ```agc
         INDEX   WHICH
         TCF     5               # Jump to program-specific spot (offset 5)
 ```
 
-This is a **vtable** — a virtual dispatch table, implemented in 1960s assembly language. The pattern is identical in concept to what a C++ compiler generates for virtual method calls. Each program "inherits" the master ignition behavior and "overrides" specific slots.
+这是一个**虚表**——一个虚拟分派表，用1960年代的汇编语言实现。其模式在概念上与 C++ 编译器为虚方法调用生成的代码完全相同。每个程序“继承”主点火行为并“覆盖”特定槽位。
 
-Note the alias definitions that make multiple programs share the same entry points:
+注意使多个程序共享相同入口点的别名定义：
 
 ```agc
 P42SPOT     =       P40SPOT         # (5)
@@ -60,11 +60,11 @@ P12SPOT     =       P40SPOT         # (5)
 P63SPOT     =       P41SPOT         # (5)  IN P63 CLOKTASK ALREADY GOING
 ```
 
-### 1.3 The Ignition Timeline
+### 1.3 点火时间线
 
-The routine orchestrates a precise countdown sequence. Here is the timeline, reconstructed from the code:
+该程序编排了一个精确的倒计时序列。以下是从代码中重建的时间线：
 
-#### TIG - 45 seconds: Entry (`BURNBABY`)
+#### TIG - 45 秒：入口（`BURNBABY`）
 
 ```agc
 BURNBABY    TC      PHASCHNG        # GROUP 4 RESTARTS HERE
@@ -75,17 +75,17 @@ BURNBABY    TC      PHASCHNG        # GROUP 4 RESTARTS HERE
             TS      DVTOTAL +1
 ```
 
-The word "EXTIRPATE" — meaning to root out and destroy completely — is not your typical assembly comment. This is the voice of Adler or Eyles. They're zeroing out `DVTOTAL` (accumulated delta-V) so the burn starts with a clean slate.
+"EXTIRPATE"这个词——意为连根拔除、彻底摧毁——并非典型的汇编注释风格。这是 Adler 或 Eyles 的声音。他们将 `DVTOTAL`（累积的速度增量）清零，以便点火从干净的状态开始。
 
-The routine then:
-1. Calls `P40AUTO` to verify the astronaut has the correct control modes set (PGNCS and AUTO)
-2. Stores the nominal TIG (Time of IGnition) for obliquity compensation
-3. Commands engine off via `ENGINOF3` (safety: ensure engine is off before sequencing)
-4. Dispatches to the program-specific "spot" via `INDEX WHICH / TCF 5`
+该程序随后：
+1. 调用 `P40AUTO` 验证航天员已设置正确的控制模式（PGNCS 和 AUTO）
+2. 存储名义 TIG（点火时刻）以进行倾斜角补偿
+3. 通过 `ENGINOF3` 命令引擎关闭（安全措施：在开始序列前确保引擎关闭）
+4. 通过 `INDEX WHICH / TCF 5` 分派到程序特定的“spot”
 
-#### TIG - 30 seconds: State Vector Propagation (`P41SPOT`)
+#### TIG - 30 秒：状态向量传播（`P41SPOT`）
 
-For programs that need it (P41/P63), the routine enters the **interpreter** to propagate the CSM state vector:
+对于需要此步骤的程序（P41/P63），程序进入**解释器**以传播 CSM 状态向量：
 
 ```agc
 P41SPOT     TC      INTPRET         # (5)
@@ -100,11 +100,11 @@ P41SPOT     TC      INTPRET         # (5)
                 CSMPREC
 ```
 
-This is interpreter code — note the `TC INTPRET` transition and the subsequent use of `DLOAD`, `DSU`, `STCALL`, `BOFF`, `VLOAD`, `MXV`, etc. It computes the CSM's predicted position and velocity at TIG-29.9 seconds, transforms them into the reference coordinate system via `REFSMMAT`, and stores the results as `V(CSM)`, `R(CSM)`, and `G(CSM)`.
+这是解释器代码——注意 `TC INTPRET` 的切换，以及随后使用的 `DLOAD`、`DSU`、`STCALL`、`BOFF`、`VLOAD`、`MXV` 等指令。它计算 TIG-29.9 秒时 CSM 的预测位置和速度，通过 `REFSMMAT` 将它们转换到参考坐标系，并将结果存储为 `V(CSM)`、`R(CSM)` 和 `G(CSM)`。
 
-The `BOFF MUNFLAG` test checks whether the Moon's gravity field is relevant. If `MUNFLAG` is clear, it skips the CSM precision integration (`CSMPREC`) and goes directly to `GOMIDAV`.
+`BOFF MUNFLAG` 检测月球引力场是否相关。如果 `MUNFLAG` 未被置位，则跳过 CSM 精度积分（`CSMPREC`），直接转到 `GOMIDAV`。
 
-If TIG gets slipped (the integration took too long), the code resets TIG:
+如果 TIG 被延迟（积分耗时过长），代码会重置 TIG：
 
 ```agc
             EXTEND              # TIG WAS SLIPPED, SO RESET TIG TO 29.9
@@ -115,9 +115,9 @@ If TIG gets slipped (the integration took too long), the code resets TIG:
             DAS     TIG
 ```
 
-This is a critical safety feature: if computation runs long, TIG is pushed forward rather than attempting a late ignition.
+这是一个关键的安全特性：如果计算时间过长，TIG 会被向前推移，而不是尝试延迟点火。
 
-#### TIG - 35 seconds: DSKY Blanking (`TIG-35`)
+#### TIG - 35 秒：DSKY 消隐（`TIG-35`）
 
 ```agc
 TIG-35      CAF     5SEC
@@ -129,20 +129,20 @@ TIG-35      CAF     5SEC
             TS      DISPDEX
 ```
 
-The DSKY display is blanked for 5 seconds to signal the astronaut that Average-G (the accelerometer integration service) is starting. This is a **human interface convention** — a visual cue that something important is happening.
+DSKY 显示被消隐5秒，向航天员发出信号：平均-G（加速度计积分服务）正在启动。这是一个**人机界面约定**——一个视觉提示，表明有重要事情正在发生。
 
-The routine also checks ullage time at this point:
+程序在此时也检查推进剂沉降时间：
 
 ```agc
             INDEX   WHICH
             CS      6               # CHECK ULLAGE TIME.
             EXTEND
-            BZMF    TASKOVER        # Skip if ullage time ≤ 0
+            BZMF    TASKOVER        # Skip if ullage time <= 0
 ```
 
-If the table entry at offset 6 is negative (like P41's `-1`), there's no ullage to perform.
+如果偏移量6处的表项为负（如 P41 的 `-1`），则无需执行推进剂沉降。
 
-#### TIG - 30 seconds: Countdown Display and Ullage Setup (`TIG-30`)
+#### TIG - 30 秒：倒计时显示与推进剂沉降设置（`TIG-30`）
 
 ```agc
 TIG-30      CAF     S24.9SEC
@@ -153,7 +153,7 @@ TIG-30      CAF     S24.9SEC
             TS      DISPDEX
 ```
 
-Sets up a task to fire at TIG-5, restarts the countdown clock display, and — critically — sets up the ullage task:
+设置在 TIG-5 触发的任务，重启倒计时时钟显示，并——关键地——设置推进剂沉降任务：
 
 ```agc
             INDEX   WHICH           # PICK UP APPROPRIATE ULLAGE -- ON TIME
@@ -165,9 +165,9 @@ Sets up a task to fire at TIG-5, restarts the countdown clock display, and — c
             ADRES   ULLGTASK
 ```
 
-**Ullage** is the practice of firing small RCS (Reaction Control System) thrusters to settle propellant at the bottom of the tanks before main engine ignition. Without it, the engine might ingest gas bubbles. The ullage duration comes from the program table (offset 6): P40 and P63 use `DEC 2240` (22.40 seconds, meaning ullage starts at TIG-7.5 for a ~7.5 second burn before ignition), while P42 uses `DEC 2640` (26.40 seconds).
+**推进剂沉降**是在主引擎点火前点燃小型 RCS（反应控制系统）推力器，使推进剂沉积在储箱底部的操作。没有这一步，引擎可能吸入气泡。沉降持续时间来自程序表（偏移量6）：P40 和 P63 使用 `DEC 2240`（22.40 秒，意味着沉降从 TIG-7.5 开始，在点火前约7.5秒燃烧），而 P42 使用 `DEC 2640`（26.40 秒）。
 
-#### TIG - 7.5 seconds: Ullage On (`ULLGTASK`)
+#### TIG - 7.5 秒：推进剂沉降启动（`ULLGTASK`）
 
 ```agc
 ULLGTASK    TC      ONULLAGE        # THIS COMES AT TIG-7.5 OR TIG-3.5
@@ -176,7 +176,7 @@ ULLGTASK    TC      ONULLAGE        # THIS COMES AT TIG-7.5 OR TIG-3.5
             TCF     TASKOVER
 ```
 
-`ONULLAGE` sets the ullage bit in `DAPBOOLS`, telling the Digital Autopilot to fire the RCS jets:
+`ONULLAGE` 在 `DAPBOOLS` 中设置沉降位，告知数字自动驾驶仪点燃 RCS 喷气装置：
 
 ```agc
 ONULLAGE    CS      DAPBOOLS        # TURN ON ULLAGE.
@@ -185,7 +185,7 @@ ONULLAGE    CS      DAPBOOLS        # TURN ON ULLAGE.
             TC      Q
 ```
 
-#### TIG - 5 seconds: Engine Enable Request (`TIG-5`)
+#### TIG - 5 秒：引擎使能请求（`TIG-5`）
 
 ```agc
 TIG-5       EXTEND
@@ -202,9 +202,9 @@ TIG-5       EXTEND
             ADRES   ASTNFLAG
 ```
 
-Clears `IGNFLAG` and `ASTNFLAG` (astronaut flag), then dispatches to the program-specific handler at offset 11. For P40/P42, this may start the S40.13 targeting routine. The display switches to verb 99 ("PLEASE ENABLE ENGINE") — asking the astronaut for permission to light the engine.
+清除 `IGNFLAG` 和 `ASTNFLAG`（航天员标志），然后分派到偏移量11处的程序特定处理器。对于 P40/P42，这可能会启动 S40.13 目标程序。显示切换到 verb 99（“请使能引擎”）——请求航天员授权点燃引擎。
 
-#### TIG - 0: Ignition Decision (`TIG-0`)
+#### TIG - 0：点火决策（`TIG-0`）
 
 ```agc
 TIG-0       CS      FLAGWRD7        # SET IGNFLAG SINCE TIG HAS ARRIVED
@@ -220,11 +220,11 @@ IGNYET?     CAF     ASTNBIT         # CHECK ASTNFLAG: HAS ASTRONAUT RESPONDED
             BZF     12              # BRANCH IF HE HAS NOT RESPONDED YET
 ```
 
-This is the **critical safety gate**: the code checks `ASTNFLAG` to see if the astronaut has pressed PROCEED in response to the V99 "PLEASE ENABLE ENGINE" display. If the astronaut hasn't responded, it branches to `WAITABIT` (offset 12), which kills group 4 and waits. The engine **will not fire** without astronaut consent.
+这是**关键安全门控**：代码检查 `ASTNFLAG`，以确认航天员是否已按下 PROCEED 以响应 V99“请使能引擎”的显示。如果航天员尚未响应，则分支到 `WAITABIT`（偏移量12），后者会终止第4组并等待。没有航天员确认，引擎**不会点火**。
 
-### 1.4 Engine Interface — The Actual Ignition
+### 1.4 引擎接口——实际点火
 
-When the astronaut has confirmed and TIG arrives, execution reaches `IGNITION`:
+当航天员已确认且 TIG 到达时，执行到达 `IGNITION`：
 
 ```agc
 IGNITION    CS      FLAGWRD5        # INSURE ENGONFLG IS SET.
@@ -238,16 +238,16 @@ IGNITION    CS      FLAGWRD5        # INSURE ENGONFLG IS SET.
             WRITE   DSALMOUT
 ```
 
-This is the moment. Let's trace the I/O:
+这就是那一刻。让我们追踪 I/O 操作：
 
-1. **`CS PRIO30`** — loads the complement of priority 30 (octal 37777 minus 30000 = a mask). Actually, `PRIO30` is octal 37777 as a priority constant; `CS` complements it to create a mask that clears certain bits.
-2. **`RAND DSALMOUT`** — reads I/O channel `DSALMOUT` (channel 11, the engine command channel) and ANDs it with A, preserving existing bits while clearing the engine bit position.
-3. **`AD BIT13`** — sets bit 13, which is the **engine on** command.
-4. **`WRITE DSALMOUT`** — writes the result back to the channel, commanding the engine to fire.
+1. **`CS PRIO30`** — 加载优先级30的补码（八进制 37777 减去 30000 = 一个掩码）。实际上，`PRIO30` 是八进制 37777 作为优先级常量；`CS` 对其取补码以创建清除特定位的掩码。
+2. **`RAND DSALMOUT`** — 读取 I/O 通道 `DSALMOUT`（通道11，引擎命令通道）并与 A 进行与运算，在清除引擎位位置的同时保留现有位。
+3. **`AD BIT13`** — 设置第13位，即**引擎开启**命令。
+4. **`WRITE DSALMOUT`** — 将结果写回通道，命令引擎点火。
 
-The engine fires via **I/O channel 11 (DSALMOUT)**, bit 13. This is a read-modify-write pattern to avoid disturbing other bits on the channel (which control other discrete outputs like the DSKY alarm).
+引擎通过 **I/O 通道11（DSALMOUT）**，第13位点火。这是一个读-改-写模式，避免干扰通道上的其他位（这些位控制其他离散输出，如 DSKY 告警）。
 
-Immediately after ignition, the code timestamps the event and updates TIG:
+点火后，代码立即为事件打上时间戳并更新 TIG：
 
 ```agc
             EXTEND              # SET TEVENT FOR DOWNLINK
@@ -262,9 +262,9 @@ Immediately after ignition, the code timestamps the event and updates TIG:
             DAS     TIG
 ```
 
-### 1.5 Program-Specific Post-Ignition: P63 (Lunar Landing)
+### 1.5 程序特定的点火后处理：P63（月球着陆）
 
-For the lunar landing burn (P63), the post-ignition sequence is particularly involved:
+对于月球着陆点火（P63），点火后序列尤为复杂：
 
 ```agc
 P63IGN      EXTEND              # (13) INITIATE BURN DISPLAYS
@@ -275,18 +275,18 @@ P63IGN      EXTEND              # (13) INITIATE BURN DISPLAYS
             TS      DISPDEX
 ```
 
-"ASSASSINATE CLOKTASK" — they don't just stop it, they *assassinate* it. Setting `DISPDEX` to the current value of Z (which is positive, since it's a program counter address) causes `CLOKTASK` to detect the positive value and terminate itself on its next cycle.
+"ASSASSINATE CLOKTASK"——他们不只是停止它，而是*暗杀*它。将 `DISPDEX` 设置为 Z 的当前值（由于是程序计数器地址，所以为正值）会导致 `CLOKTASK` 在下次唤醒时检测到该正值并自行终止。
 
-The P63 ignition handler then:
-- Sets `LETABBIT` in `FLAGWRD9` — enables P70/P71 (abort programs)
-- Sets `SWANDBIT` in `FLAGWRD7` — enables the R10 landing display (altitude/altitude-rate)
-- Clears minimum-impulse mode in `DAPBOOLS` — ensures the DAP uses normal thrust
-- Initializes `WCHPHASE` and `FLPASS0` for the descent guidance phases
-- Falls through to `P42IGN`
+P63 点火处理器随后：
+- 在 `FLAGWRD9` 中设置 `LETABBIT`——启用 P70/P71（中止程序）
+- 在 `FLAGWRD7` 中设置 `SWANDBIT`——启用 R10 着陆显示（高度/高度变化率）
+- 清除 `DAPBOOLS` 中的最小脉冲模式——确保 DAP 使用正常推力
+- 初始化 `WCHPHASE` 和 `FLPASS0` 以进入下降制导阶段
+- 落入 `P42IGN`
 
-### 1.6 Throttle-Up: P63ZOOM and P40ZOOM
+### 1.6 节流推力提升：P63ZOOM 和 P40ZOOM
 
-For P63, a delayed throttle-up is scheduled at TIG-0:
+对于 P63，在 TIG-0 时会安排延迟节流推力提升：
 
 ```agc
             CA      ZOOMTIME
@@ -295,7 +295,7 @@ For P63, a delayed throttle-up is scheduled at TIG-0:
             2CADR   P63ZOOM
 ```
 
-When `P63ZOOM` fires (26 seconds after ignition per the file header comment):
+当 `P63ZOOM` 触发时（根据文件头注释，在点火后26秒）：
 
 ```agc
 P63ZOOM     EXTEND
@@ -307,9 +307,9 @@ P63ZOOM     EXTEND
             TCF     P40ZOOMA
 ```
 
-This connects the `LUNLAND` guidance routine (the famous lunar landing guidance equations) to the AVERAGEG service loop, then commands full throttle via `FLATOUT`.
+这将 `LUNLAND` 制导程序（著名的月球着陆制导方程）连接到 AVERAGEG 服务循环，然后通过 `FLATOUT` 命令全推力。
 
-For P40:
+对于 P40：
 
 ```agc
 P40ZOOM     CAF     BIT13
@@ -319,26 +319,26 @@ P40ZOOM     CAF     BIT13
             WOR     CHAN14          # Write to I/O channel 14
 ```
 
-This writes to **I/O channel 14**, a multi-function output channel that controls (among other things) engine commands for the LM. `BIT13` sets the thrust command register, and `BIT4` on channel 14 is the engine-on bit for the DPS.
+这写入 **I/O 通道14**，这是一个多功能输出通道，控制（除其他功能外）LM 的引擎命令。`BIT13` 设置推力命令寄存器，通道14上的 `BIT4` 是 DPS 的引擎开启位。
 
-### 1.7 Safety Features Summary
+### 1.7 安全特性摘要
 
-The routine implements multiple layers of safety:
+该程序实现了多层安全保障：
 
-1. **Astronaut consent gate** — V99 "PLEASE ENABLE ENGINE" must be answered with PROCEED before ignition
-2. **Engine-off before sequencing** — `ENGINOF3` is called at entry to ensure a clean state
-3. **TIG slip protection** — if state vector propagation runs long, TIG is pushed forward
-4. **Ullage verification** — ullage jets fire before main engine to settle propellant
-5. **Mode verification** — `P40AUTO` checks that PGNCS and AUTO modes are set; if not, displays checklist 203
-6. **Communication failure handling** — `COMFAIL` paths handle loss of ground contact
-7. **Restart protection** — extensive use of `PHASCHNG` ensures every critical state transition can survive a computer restart
-8. **Abort paths** — `ABRTABLE` provides an emergency ignition path with minimal setup (`NOOP` placeholders for unused slots)
-9. **DVMON connection** — after ignition, `DVMONCON` connects the delta-V monitor, which watches for engine failure
-10. **Ullage shutoff** — `ULLAGOFF` turns off RCS ullage 0.5 seconds after main engine light-up
+1. **航天员同意门控** — V99“请使能引擎”必须用 PROCEED 响应后才能点火
+2. **序列前关闭引擎** — 入口处调用 `ENGINOF3` 以确保初始状态干净
+3. **TIG 延迟保护** — 如果状态向量传播运行时间过长，TIG 会被向前推移
+4. **推进剂沉降验证** — 主引擎点火前点燃沉降喷管以沉积推进剂
+5. **模式验证** — `P40AUTO` 检查 PGNCS 和 AUTO 模式是否已设置；若未设置，则显示检查表203
+6. **通信失败处理** — `COMFAIL` 路径处理与地面失联的情况
+7. **重启保护** — 广泛使用 `PHASCHNG` 确保每个关键状态转换在计算机重启后都能恢复
+8. **中止路径** — `ABRTABLE` 提供紧急点火路径，未使用的槽位用 `NOOP` 占位
+9. **DVMON 连接** — 点火后，`DVMONCON` 连接速度增量监视器，监测引擎故障
+10. **推进剂沉降关闭** — `ULLAGOFF` 在主引擎点火后0.5秒关闭 RCS 沉降
 
-### 1.8 The Countdown Clock
+### 1.8 倒计时时钟
 
-The `CLOKTASK`/`CLOKJOB` pair implements the countdown timer display:
+`CLOKTASK`/`CLOKJOB` 对实现倒计时显示：
 
 ```agc
 CLOKTASK    CS      TIME1           # SET TBASE6 FOR GROUP 6 RESTART
@@ -355,42 +355,42 @@ CLOKTASK    CS      TIME1           # SET TBASE6 FOR GROUP 6 RESTART
             TCF     CLOKTASK        # Loop
 ```
 
-`CLOKTASK` runs as a Waitlist task, firing every second. It spawns `CLOKJOB` which computes `TTOGO = TIME2 - TIG` and uses `DISPDEX` as a negative index into a display dispatch table.
+`CLOKTASK` 作为 Waitlist 任务运行，每秒触发一次。它生成 `CLOKJOB`，后者计算 `TTOGO = TIME2 - TIG`，并使用 `DISPDEX` 作为负索引进入显示分派表。
 
-The dispatch table is clever — labels like `-35`, `-25`, `-17`, `-13`, `-2` correspond to `DISPDEX` values that select different displays at different phases of the countdown:
+该分派表非常巧妙——`-35`、`-25`、`-17`、`-13`、`-2` 等标签对应的 `DISPDEX` 值在倒计时不同阶段选择不同的显示：
 
-| DISPDEX | Display |
-|---------|---------|
-| -35 (VB97DEX) | Verb 97 paste (communication failure) |
-| -25 | V06N61 — event timer reset display |
-| -17 (CNTDNDEX) | Normal countdown display (V/N from table offset 0) |
-| -13 (VB99DEX) | Verb 99 — "PLEASE ENABLE ENGINE" |
-| -2 (BLANKDEX) | Blank DSKY |
+| DISPDEX | 显示内容 |
+|---------|----------|
+| -35 (VB97DEX) | Verb 97 粘贴（通信失败） |
+| -25 | V06N61 — 事件计时器复位显示 |
+| -17 (CNTDNDEX) | 正常倒计时显示（来自表偏移量0的 V/N） |
+| -13 (VB99DEX) | Verb 99 — “请使能引擎” |
+| -2 (BLANKDEX) | DSKY 消隐 |
 
-The comment is explicit about a critical invariant:
+注释明确指出一个关键不变量：
 
 ```agc
             COM
             RELINT          # ***** DISPDEX MUST NEVER B -0 *****
 ```
 
-In 1's complement, `-0` (all ones, octal 77777) would be a valid `DISPDEX` value but would cause incorrect indexing after the `CCS`/`COM` sequence. The five-asterisk emphasis shows this was a known landmine.
+在1的补码中，`-0`（全1，八进制77777）是一个有效的 `DISPDEX` 值，但在 `CCS`/`COM` 序列后会导致错误索引。五个星号的强调表明这是一个已知的陷阱。
 
 ---
 
-## 2. Cultural Archaeology
+## 2. 文化考古
 
-### 2.1 The Name: "Burn, Baby! BURN!"
+### 2.1 名称："Burn, Baby! BURN!"
 
-The file header contains a remarkable historical note, added by the modern transcription team based on Don Eyles' account at the 40th anniversary gathering of AGC developers:
+文件头部包含一段引人注目的历史说明，由现代转录团队根据 Don Eyles 在 AGC 开发者40周年聚会上的讲述添加：
 
-> It traces back to 1965 and the Los Angeles riots, and was inspired by disc jockey extraordinaire and radio station owner Magnificent Montague. Magnificent Montague used the phrase "Burn, baby! BURN!" when spinning the hottest new records. Magnificent Montague was the charismatic voice of soul music in Chicago, New York, and Los Angeles from the mid-1950s to the mid-1960s.
+> 这可以追溯到1965年的洛杉矶骚乱，灵感来自出色的唱片骑师兼电台老板 Magnificent Montague。Magnificent Montague 在播放最热门的新唱片时会喊"Burn, baby! BURN!"这句话。Magnificent Montague 是从1950年代中期到1960年代中期在芝加哥、纽约和洛杉矶灵魂乐的魅力之声。
 
-Nathaniel "Magnificent" Montague was a radio DJ who would shout "Burn, baby! BURN!" when a record was particularly good — a term of highest approval. During the August 1965 Watts riots in Los Angeles, the phrase was co-opted by rioters and took on a far darker meaning. Montague was reportedly horrified and tried to change his catchphrase.
+Nathaniel "Magnificent" Montague 是一位电台 DJ，每当一张唱片特别出色时就会高喊"Burn, baby! BURN!"——这是最高赞扬的说法。在1965年8月洛杉矶瓦茨骚乱期间，这句话被暴动者借用，带上了更黑暗的含义。据报道，Montague 对此深感震惊，并试图改变他的口头禅。
 
-That Adler and Eyles chose this phrase for the master ignition routine — the code that literally burns rocket engines — shows the MIT IL team's irreverent humor. The phrase works on multiple levels: it's a command to the engine, a DJ's exclamation of excellence, and a dark historical echo, all compressed into a subroutine label.
+Adler 和 Eyles 为主点火程序——字面意义上点燃火箭引擎的代码——选择这个短语，展示了麻省理工学院仪器实验室团队的不羁幽默。这个短语在多个层面上都有效：它是对引擎的命令，是 DJ 表达卓越的感叹，也是一个黑暗的历史回响，所有这些都压缩在一个子程序标签里。
 
-The censored variant `B*RNB*B*` at the secondary entry point may be a joke about the profanity-adjacent nature of the name, or it may serve a practical purpose (a distinct label for the post-`P40AUTO` entry point that's easy to find in listings).
+次要入口点处的审查变体 `B*RNB*B*` 可能是对该名称接近粗口性质的玩笑，也可能有实际用途（一个与 `P40AUTO` 之后入口点不同的标签，便于在清单中查找）。
 
 ### 2.2 "HONI SOIT QUI MAL Y PENSE"
 
@@ -398,9 +398,9 @@ The censored variant `B*RNB*B*` at the secondary entry point may be a joke about
 #            HONI SOIT QUI MAL Y PENSE
 ```
 
-This is the motto of the Order of the Garter, the oldest and most prestigious British order of chivalry, dating to 1348. It translates from Old French as: **"Shame on him who thinks evil of it."**
+这是嘉德勋章的格言，嘉德勋章是英国最古老、最负盛名的骑士勋章，可追溯至1348年。这句话从古法语译为：**"心存邪念者蒙羞。"**
 
-Placed directly after the statement that the routine "was conceived and executed, and (NOTA BENE) is maintained by Adler and Eyles," this reads as a defiant declaration: *if you think there's something wrong with our code, the shame is on you.* It's territorial pride dressed in medieval heraldry — two young engineers planting their flag.
+紧接在声明该程序"由 Adler 和 Eyles 构思并实现，且（NOTA BENE）由 Adler 和 Eyles 维护"之后，这读起来像是一个挑衅性的宣言：*如果你认为我们的代码有问题，那羞耻在于你。* 这是以中世纪纹章包装的领地骄傲——两位年轻工程师插下的旗帜。
 
 ### 2.3 "NOLI SE TANGERE"
 
@@ -408,9 +408,9 @@ Placed directly after the statement that the routine "was conceived and executed
 #            NOLI SE TANGERE
 ```
 
-Placed just before the program tables begin. This is a slight variation of the Latin "Noli me tangere" — **"Touch me not"** (or in this form, closer to "Do not touch it"). The phrase originates from the Gospel of John, where the resurrected Christ says these words to Mary Magdalene.
+紧接在程序表开始之前。这是拉丁语"Noli me tangere"的轻微变体——**"勿触碰我"**（在此形式中，更接近"请勿触碰它"）。该短语源自《约翰福音》，复活的基督对抹大拉的马利亚说了这句话。
 
-In context, it's a warning to other programmers: **do not modify these tables.** The table structure is the backbone of the entire ignition routine, and changing an offset would silently break every program that uses it. This is the 1960s equivalent of a `// DO NOT EDIT` comment, but with considerably more gravitas.
+在此语境中，这是对其他程序员的警告：**不要修改这些表。** 表结构是整个点火程序的骨干，改变一个偏移量会悄悄破坏所有使用它的程序。这是1960年代版的 `// DO NOT EDIT` 注释，但具有相当更强的庄严感。
 
 ### 2.4 "NOTA BENE"
 
@@ -418,7 +418,7 @@ In context, it's a warning to other programmers: **do not modify these tables.**
 # THE MASTER IGNITION ROUTINE WAS CONCEIVED AND EXECUTED, AND (NOTA BENE) IS MAINTAINED BY ADLER AND EYLES.
 ```
 
-Latin for "note well." The parenthetical emphasis on "is maintained" is a clear message to the rest of the team: *if you have a problem with this code, come to us.* Combined with "HONI SOIT QUI MAL Y PENSE" and "NOLI SE TANGERE," a picture emerges of two engineers who are proud of their work, protective of its integrity, and not above using dead languages to enforce code ownership.
+拉丁语，意为"请注意"。对"由……维护"的括号强调向团队其他成员传达了一个明确信息：*如果你对这段代码有异议，来找我们。* 结合"HONI SOIT QUI MAL Y PENSE"和"NOLI SE TANGERE"，描绘出两位工程师的形象：他们为自己的工作感到骄傲，守护其完整性，且不惮于用古老语言来强制维权。
 
 ### 2.5 "EXTIRPATE"
 
@@ -426,7 +426,7 @@ Latin for "note well." The parenthetical emphasis on "is maintained" is a clear 
             CAF     ZERO        # EXTIRPATE JUNK LEFT IN DVTOTAL
 ```
 
-To *extirpate* means to pull up by the roots, to destroy utterly. Where a modern programmer might write `// clear delta-V accumulator`, Adler and Eyles write "EXTIRPATE JUNK." The word choice conveys both precision (this isn't just clearing a variable, it's destroying contaminating residue) and personality.
+*extirpate* 的意思是连根拔除、彻底摧毁。现代程序员可能会写 `// clear delta-V accumulator`，而 Adler 和 Eyles 却写"EXTIRPATE JUNK"。措辞既传达了精确性（这不只是清除一个变量，而是摧毁污染性残留），也体现了个性。
 
 ### 2.6 "ASSASSINATE CLOKTASK"
 
@@ -435,25 +435,25 @@ To *extirpate* means to pull up by the roots, to destroy utterly. Where a modern
             TS      DISPDEX
 ```
 
-Not "stop," not "terminate," not "kill" — *assassinate*. `CLOKTASK` doesn't know it's about to die. It will discover its own death on its next wake-up, when it finds `DISPDEX` has been set positive. This is technically precise (it's a deferred kill, not an immediate one) and linguistically vivid.
+不是"停止"，不是"终止"，不是"杀死"——是*暗杀*。`CLOKTASK` 并不知道自己即将死去。它将在下次唤醒时发现自己的死亡，当时它会发现 `DISPDEX` 已被设置为正值。这在技术上是精确的（这是延迟终止，而非立即终止），在语言上也生动形象。
 
-### 2.7 "HELLO THERE" and "GOODBYE. COME AGAIN SOON."
+### 2.7 "HELLO THERE" 与 "GOODBYE. COME AGAIN SOON."
 
-In the `P40AUTO` subroutine:
+在 `P40AUTO` 子程序中：
 
 ```agc
 P40AUTO     TC      MAKECADR    # HELLO THERE.
             TS      TEMPR60
 ```
 
-And at the end:
+在结尾处：
 
 ```agc
 GOBACK      CA      TEMPR60
             TC      BANKJUMP    # GOODBYE.  COME AGAIN SOON.
 ```
 
-The subroutine greets its callers on entry and bids them farewell on exit. This is pure personality — the code is being *hospitable*. It also serves as a subtle documentation aid: these comments mark the boundaries of a self-contained subroutine in a file where control flow is otherwise labyrinthine.
+子程序在入口处问候调用者，在退出时道别。这是纯粹的个性——代码在表现*好客*。它也提供了微妙的文档辅助：这些注释在控制流复杂的文件中标记了一个自包含子程序的边界。
 
 ### 2.8 "?" = GOTOPOOH
 
@@ -461,13 +461,13 @@ The subroutine greets its callers on entry and bids them farewell on exit. This 
 ?           =       GOTOPOOH
 ```
 
-This equate defines the label `?` as an alias for `GOTOPOOH` (go to P00, the idle program — "POOH" as in Winnie-the-Pooh, since P00 → "Pooh"). The question mark as a label is itself a joke — it's the "what do we do?" symbol pointing to the "go do nothing" routine. AGC labels could contain almost any character, and the team exploited this fully.
+这个等价定义将标签 `?` 定义为 `GOTOPOOH` 的别名（转到 P00，即空闲程序——"POOH"如小熊维尼，因为 P00 → "Pooh"）。问号作为标签本身就是个笑话——它是指向"什么都不做"程序的"我们该怎么办？"符号。AGC 标签几乎可以包含任何字符，团队充分利用了这一点。
 
-### 2.9 Absent Cultural References
+### 2.9 缺席的文化引用
 
-The user's prompt asks about "OFF TO SEE THE WIZARD" and "HAS THE LITTLE OLD LADY LEFT?" — **these comments do not appear in this file.** They likely exist in other modules (possibly in the Executive or Waitlist code, or in the guidance equations). Their absence here is worth noting: BURN_BABY_BURN has its own distinct personality. Its cultural register is Latin inscriptions and soul music, not Wizard of Oz references.
+用户提问中提到了"OFF TO SEE THE WIZARD"和"HAS THE LITTLE OLD LADY LEFT?"——**这些注释并不出现在本文件中。** 它们可能存在于其他模块（可能在执行程序或等待列表代码中，或在制导方程中）。它们在此处的缺席值得注意：BURN_BABY_BURN 有其独特的个性。其文化基调是拉丁铭文和灵魂乐，而非绿野仙踪的引用。
 
-### 2.10 Astronaut Checklist Reference
+### 2.10 航天员检查表引用
 
 ```agc
 TURNITON    CAF     P40A/PMD    # DISPLAYS V50N25 R1=203 PLEASE PERFORM
@@ -475,15 +475,15 @@ TURNITON    CAF     P40A/PMD    # DISPLAYS V50N25 R1=203 PLEASE PERFORM
             CADR    GOPERF1
 ```
 
-`P40A/PMD` resolves to `OCT 00203` — checklist item 203. This displays "V50N25" (Verb 50 Noun 25: "Please perform checklist item in R1") with R1=203. Checklist 203 instructed the astronaut to verify that the Primary Guidance, Navigation, and Control System (PGNCS) was on and the spacecraft was in AUTO mode. The code couldn't flip those physical switches — it had to ask a human.
+`P40A/PMD` 解析为 `OCT 00203`——检查表项目203。这显示“V50N25”（Verb 50 Noun 25：“请在 R1 中执行检查表项目”），R1=203。检查表203指示航天员验证主制导、导航和控制系统（PGNCS）已开启，且飞船处于 AUTO 模式。代码无法拨动那些物理开关——它必须请求人工操作。
 
 ---
 
-## 3. Code Quality and Structure
+## 3. 代码质量与结构
 
-### 3.1 Almost Entirely Native AGC
+### 3.1 几乎完全是原生 AGC
 
-Unlike the guidance equation files (LUNAR_LANDING_GUIDANCE_EQUATIONS, THE_LUNAR_LANDING, etc.) which are predominantly interpreter code, BURN_BABY_BURN is **overwhelmingly native AGC assembly**. The only interpreter block is the state vector propagation in `P41SPOT`:
+与制导方程文件（LUNAR_LANDING_GUIDANCE_EQUATIONS、THE_LUNAR_LANDING 等）以解释器代码为主不同，BURN_BABY_BURN **绝大部分是原生 AGC 汇编**。唯一的解释器块是 `P41SPOT` 中的状态向量传播：
 
 ```agc
 P41SPOT     TC      INTPRET         # Enter interpreter
@@ -495,62 +495,62 @@ P41SPOT     TC      INTPRET         # Enter interpreter
                 MIDTOAV1            # Return to basic (native) mode
 ```
 
-This makes sense architecturally: the ignition routine is a **real-time sequencer**, not a math-heavy computation. It needs precise timing control, direct I/O access, interrupt management, and Waitlist task scheduling — all things that require native AGC instructions. The interpreter's ~10-25x performance penalty would be unacceptable for time-critical ignition sequencing.
+这从架构上来说是合理的：点火程序是一个**实时序列器**，而非计算密集型程序。它需要精确的时序控制、直接 I/O 访问、中断管理和等待列表任务调度——这些都需要原生 AGC 指令。解释器约10-25倍的性能损耗对于时间关键的点火序列是不可接受的。
 
-### 3.2 Control Flow Architecture
+### 3.2 控制流架构
 
-The control flow is complex but disciplined. There are three interlocking mechanisms:
+控制流复杂但有规律。有三种相互交织的机制：
 
-**1. Waitlist Tasks (time-driven):**
+**1. 等待列表任务（时间驱动）：**
 
 ```
 TIG-35 → (5 sec) → TIG-30 → (24.9 sec) → TIG-5 → (5 sec) → TIG-0 → IGNITION
 ```
 
-Each task schedules the next via `TWIDDLE` (a Waitlist convenience routine). This chain is the backbone of the countdown.
+每个任务通过 `TWIDDLE`（等待列表便利程序）调度下一个。这条链是倒计时的骨干。
 
-**2. Jobs (priority-driven):**
+**2. 作业（优先级驱动）：**
 
-Jobs like `CLOKJOB`, `S40.13`, `P41BLANK`, and `POSTBURN` run under the Executive's cooperative scheduler. They handle computation-heavy work (display updates, targeting) that would be too long for a Waitlist task.
+`CLOKJOB`、`S40.13`、`P41BLANK` 和 `POSTBURN` 等作业在执行程序的协作调度器下运行。它们处理耗时较长的计算工作（显示更新、目标计算），这些工作对于等待列表任务来说太长了。
 
-**3. Table Dispatch (program-driven):**
+**3. 表分派（程序驱动）：**
 
-`INDEX WHICH / TCF n` is used throughout to branch to program-specific behavior. This is the polymorphism layer.
+`INDEX WHICH / TCF n` 在整个程序中用于分支到程序特定行为。这是多态层。
 
-These three mechanisms interleave: a Waitlist task may spawn a job, which may use table dispatch. Understanding any single path through the code requires tracking all three.
+这三种机制相互交织：等待列表任务可能生成一个作业，该作业可能使用表分派。理解代码中的任何单一路径都需要同时追踪这三种机制。
 
-### 3.3 Restart Protection
+### 3.3 重启保护
 
-The code is obsessive about restart protection. Nearly every state transition is bracketed by `PHASCHNG` calls:
+代码对重启保护极为重视。几乎每次状态转换都被 `PHASCHNG` 调用所包围：
 
 ```agc
 BURNBABY    TC      PHASCHNG        # GROUP 4 RESTARTS HERE
             OCT     04024
 ```
 
-The octal constants encode which restart group and phase to set. If the computer resets (as it did during Apollo 11's famous 1202 alarms), the Executive can resume execution at the correct point in the ignition sequence rather than starting over. This is critical — you cannot restart a countdown from zero when you're already 20 seconds from ignition.
+八进制常量编码了要设置的重启组和阶段。如果计算机复位（正如阿波罗11号著名的1202告警期间发生的那样），执行程序可以在点火序列的正确位置恢复执行，而不是从头开始。这至关重要——当你距离点火只有20秒时，无法从零重启倒计时。
 
-The restart groups used in this file:
-- **Group 1**: Ullage task protection
-- **Group 3**: Zoom (throttle-up) protection, S40.13 protection
-- **Group 4**: Main ignition sequence (the primary chain)
-- **Group 6**: Countdown clock (`CLOKTASK`)
+本文件中使用的重启组：
+- **第1组**：推进剂沉降任务保护
+- **第3组**：节流提升保护、S40.13 保护
+- **第4组**：主点火序列（主链）
+- **第6组**：倒计时时钟（`CLOKTASK`）
 
-### 3.4 Comparison to Guidance Equations
+### 3.4 与制导方程的比较
 
-| Aspect | BURN_BABY_BURN | Guidance Equations |
+| 方面 | BURN_BABY_BURN | 制导方程 |
 |--------|---------------|-------------------|
-| Language | ~95% native AGC | ~80% interpreter |
-| Primary concern | Timing, sequencing, I/O | Mathematics |
-| Data types | Flags, addresses, time values | Vectors, matrices, angles |
-| Control flow | Task chains + table dispatch | CALL/GOTO in interpreter |
-| Restart protection | Extensive (every transition) | Moderate (at major phases) |
-| Comments | Personality-rich | Terse to moderate |
-| Complexity source | State machine with many paths | Numerical algorithms |
+| 语言 | ~95% 原生 AGC | ~80% 解释器 |
+| 主要关注点 | 时序、序列、I/O | 数学计算 |
+| 数据类型 | 标志、地址、时间值 | 向量、矩阵、角度 |
+| 控制流 | 任务链 + 表分派 | 解释器中的 CALL/GOTO |
+| 重启保护 | 广泛（每次转换） | 适中（主要阶段） |
+| 注释 | 个性丰富 | 简洁到适中 |
+| 复杂性来源 | 多路径状态机 | 数值算法 |
 
-### 3.5 The `KILLTASK` Routine
+### 3.5 `KILLTASK` 程序
 
-The file ends with a general-purpose utility: `KILLTASK`, which removes a scheduled task from the Waitlist. Its header comment is unusually thorough for the AGC codebase — full calling sequence, exit conditions, erasable initialization, output, and debris (clobbered registers):
+文件以一个通用工具程序 `KILLTASK` 结束，该程序从等待列表中移除一个已调度的任务。其头部注释在 AGC 代码库中异常详尽——包含完整的调用序列、退出条件、可擦存储器初始化、输出和副作用（被破坏的寄存器）：
 
 ```
 # KILLTASK IS USED TO REMOVE A TASK FROM THE WAITLIST BY SUBSTITUTING
@@ -558,9 +558,9 @@ The file ends with a general-purpose utility: `KILLTASK`, which removes a schedu
 # TC TASKOVER.
 ```
 
-The "(OF COURSE)" is a small touch of personality from Covelli (credited in the header). The implementation scans the `LST2` waitlist array, comparing both the GENADR and FBANK of each entry against the target task. When found, it overwrites the entry with `TCTSKOVR` (a `TC TASKOVER` instruction) — the task slot now contains a no-op that will harmlessly execute and terminate.
+"(OF COURSE)"是 Covelli（在文件头中被提及）的一点个性展示。实现方法是扫描 `LST2` 等待列表数组，将每个条目的 GENADR 和 FBANK 与目标任务进行比较。找到后，用 `TCTSKOVR`（一条 `TC TASKOVER` 指令）覆盖该条目——任务槽现在包含一个将无害执行并终止的空操作。
 
-The scan loop:
+扫描循环：
 
 ```agc
 ADRSCAN     INDEX   L
@@ -577,37 +577,37 @@ LETITLIV    CS      LSTLIM
             TCF     ADRSCAN
 ```
 
-The label `LETITLIV` (let it live) for the "no match, continue" case, and `KILLDEAD` for the successful removal, continue the file's tradition of vivid naming.
+`LETITLIV`（让它活着）标签用于"不匹配，继续"情况，`KILLDEAD` 标签用于成功移除，延续了文件中生动命名的传统。
 
-Note that `KILLTASK` leaves interrupts inhibited (`INHINT` at entry, no `RELINT`), as documented: "KILLTASK LEAVES INTERRUPTS INHIBITED SO CALLER MUST RELINT." This is a deliberate design choice — the caller may need to perform additional atomic operations before re-enabling interrupts.
-
----
-
-## 4. The Moment of Landing
-
-To understand this file's place in history, trace the P63 path:
-
-1. `BURNBABY` enters with `WHICH` pointing to `P63TABLE`
-2. The countdown proceeds through TIG-35, TIG-30, TIG-5
-3. At TIG-5, the DSKY shows V99: "PLEASE ENABLE ENGINE"
-4. Aldrin presses PROCEED
-5. At TIG-0, `IGNITION` fires — bit 13 written to DSALMOUT
-6. The descent engine ignites at ~50,000 feet above the Moon
-7. 26 seconds later, `P63ZOOM` throttles to full power and connects `LUNLAND` — the landing guidance equations take over
-8. `CLOKTASK` is assassinated; the landing display takes its place
-
-From this point, the Lunar Module is committed. BURN_BABY_BURN hands off to the guidance equations, which will steer Armstrong and Aldrin to the surface.
-
-The code that performed this sequence was woven into core rope memory months before launch. It could not be patched. It had to work the first time, on the only attempt humanity would get at Apollo 11's landing. And it did.
+注意 `KILLTASK` 保持中断禁止状态（入口处 `INHINT`，无 `RELINT`），如文档所述："KILLTASK LEAVES INTERRUPTS INHIBITED SO CALLER MUST RELINT。"这是一个刻意的设计选择——调用者可能需要在重新启用中断前执行额外的原子操作。
 
 ---
 
-## Notes on Uncertainty
+## 4. 着陆的那一刻
 
-- **I/O channel details**: The exact bit assignments on DSALMOUT (channel 11) are inferred from the code pattern (`RAND` to read, `AD BIT13` to set, `WRITE` to commit). The channel number and bit function are consistent with LM documentation but I have not cross-referenced against the I/O channel tables in this codebase.
+要理解这个文件在历史上的地位，请追踪 P63 路径：
 
-- **ZOOMTIME value**: The header states throttle-up occurs at "TIG + 26 seconds" for DPS programs, but the actual value of `ZOOMTIME` is not defined in this file. It's presumably defined in an erasable initialization or in the calling program.
+1. `BURNBABY` 以 `WHICH` 指向 `P63TABLE` 进入
+2. 倒计时经过 TIG-35、TIG-30、TIG-5
+3. 在 TIG-5，DSKY 显示 V99："请使能引擎"
+4. Aldrin 按下 PROCEED
+5. 在 TIG-0，`IGNITION` 点火——第13位写入 DSALMOUT
+6. 下降引擎在月球上空约50,000英尺处点火
+7. 26秒后，`P63ZOOM` 节流至全功率并连接 `LUNLAND`——着陆制导方程接管
+8. `CLOKTASK` 被"暗杀"；着陆显示取而代之
 
-- **"OFF TO SEE THE WIZARD" and "HAS THE LITTLE OLD LADY LEFT?"**: These comments were mentioned in the analysis prompt but **do not appear in this file**. They exist elsewhere in the Luminary codebase.
+从这一刻起，登月舱已无退路。BURN_BABY_BURN 将控制权移交给制导方程，后者将引导 Armstrong 和 Aldrin 降落到月球表面。
 
-- **P61TABLE**: Referenced in the header comments as a user of the ignition routine, but no `P61TABLE` appears in this file. It may be defined in the P61 source module and simply points the `WHICH` register to its own table elsewhere in memory.
+执行这一序列的代码在发射前数月被编织进核心绳式存储器。它无法被修补。它必须在第一次运行时就成功，在人类阿波罗11号着陆的唯一尝试中。而它做到了。
+
+---
+
+## 不确定性说明
+
+- **I/O 通道细节**：DSALMOUT（通道11）上的确切位分配是从代码模式推断的（`RAND` 读取，`AD BIT13` 设置，`WRITE` 提交）。通道编号和位功能与 LM 文档一致，但我未与本代码库中的 I/O 通道表进行交叉核实。
+
+- **ZOOMTIME 值**：文件头说明 DPS 程序的节流提升发生在"TIG + 26秒"，但 `ZOOMTIME` 的实际值未在本文件中定义。它可能在可擦存储器初始化中或调用程序中定义。
+
+- **"OFF TO SEE THE WIZARD"和"HAS THE LITTLE OLD LADY LEFT?"**：分析提示中提到了这些注释，但**它们不出现在本文件中**。它们存在于 Luminary 代码库的其他地方。
+
+- **P61TABLE**：在文件头注释中作为点火程序的使用者被引用，但本文件中没有 `P61TABLE`。它可能在 P61 源模块中定义，并简单地将 `WHICH` 寄存器指向内存中其他地方的自有表。

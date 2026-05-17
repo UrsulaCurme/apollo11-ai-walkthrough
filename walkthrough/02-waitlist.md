@@ -1,36 +1,36 @@
-# The Waitlist: A Hardware-Driven Task Scheduler in 2K of RAM
+# 等待列表：2K RAM 中的硬件驱动任务调度器
 
-## Overview
+## 概述
 
-The Waitlist is the AGC's real-time task scheduler — a timer-driven, interrupt-triggered dispatch system that complements the Executive's cooperative job scheduler. Where the Executive manages long-running "jobs" that can be suspended and resumed through voluntary priority scheduling, the Waitlist handles short, time-critical "tasks" that must fire at precise moments: autopilot jet firings, DSKY display updates, sensor readings, guidance equation steps.
+等待列表（Waitlist）是 AGC 的实时任务调度器——一个由定时器驱动、中断触发的分派系统，与执行模块（Executive）的协作式作业调度器相互补充。执行模块管理可通过自愿优先级调度来挂起和恢复的长时运行"作业"，而等待列表则处理必须在精确时刻触发的短时、时间关键型"任务"：自动驾驶喷气点火、DSKY 显示更新、传感器读取、制导方程步骤。
 
-The entire mechanism fits in roughly 200 words of fixed memory and uses 27 words of erasable memory for its data structures. It supports up to 9 concurrent pending tasks with a timing resolution of 10 milliseconds and a maximum single-shot delay of 162.5 seconds. For longer delays, LONGCALL extends coverage to roughly 2.56 hours through iterative rescheduling.
+整个机制占用固定内存约 200 字，使用可擦除内存中的 27 字用于其数据结构。它最多支持 9 个并发待处理任务，定时分辨率为 10 毫秒，最大单次延迟为 162.5 秒。对于更长的延迟，LONGCALL 通过迭代重调度将覆盖范围延伸至约 2.56 小时。
 
 ---
 
-## 1. Architecture
+## 1. 架构
 
-### Executive Jobs vs. Waitlist Tasks
+### 执行作业与等待列表任务
 
-The AGC runs two fundamentally different scheduling systems simultaneously:
+AGC 同时运行两种根本不同的调度系统：
 
-| Property | Executive Job | Waitlist Task |
-|----------|--------------|---------------|
-| **Trigger** | Software request (FINDVAC/NOVAC) | Hardware timer interrupt (T3RUPT) |
-| **Duration** | Long-running, may sleep | Short — must complete quickly |
-| **Preemption** | Cooperative (voluntary CHANG1) | Preemptive (interrupts foreground) |
-| **Context** | Has a VAC area (work registers) | No saved context — runs to completion |
-| **Termination** | TC ENDOFJOB | TC TASKOVER |
-| **Priority** | 1-37 (octal), priority-scheduled | First-come-first-served by time |
-| **Max concurrent** | 7 jobs | 9 tasks |
+| 属性 | 执行作业 | 等待列表任务 |
+|------|---------|------------|
+| **触发方式** | 软件请求（FINDVAC/NOVAC） | 硬件定时器中断（T3RUPT） |
+| **持续时间** | 长时运行，可休眠 | 短暂——必须快速完成 |
+| **抢占方式** | 协作式（自愿 CHANG1） | 抢占式（中断前台） |
+| **上下文** | 拥有 VAC 区域（工作寄存器） | 无保存上下文——运行至完成 |
+| **终止方式** | TC ENDOFJOB | TC TASKOVER |
+| **优先级** | 1-37（八进制），按优先级调度 | 按时间先来先服务 |
+| **最大并发数** | 7 个作业 | 9 个任务 |
 
-A Waitlist task runs in interrupt context. It fires, does its work (typically tens to hundreds of instructions), and returns via `TC TASKOVER`. If the work is too large for interrupt context, the task's first action is typically to schedule an Executive job via `FINDVAC` and then immediately `TC TASKOVER`.
+等待列表任务在中断上下文中运行。它触发，完成工作（通常几十到几百条指令），然后通过 `TC TASKOVER` 返回。如果工作量对于中断上下文而言过大，任务的第一个动作通常是通过 `FINDVAC` 调度一个执行作业，然后立即 `TC TASKOVER`。
 
-### The Data Structures: LST1 and LST2
+### 数据结构：LST1 和 LST2
 
-The Waitlist maintains two parallel arrays in switched erasable memory (EBANK=LST1):
+等待列表在可切换可擦除内存（EBANK=LST1）中维护两个并行数组：
 
-**LST1** — An 8-entry array of *delta times* between consecutive tasks:
+**LST1** — 连续任务之间*增量时间*的 8 项数组：
 
 ```
 C(LST1)     = -(T2 - T1) + 1
@@ -40,11 +40,11 @@ C(LST1 +2)  = -(T4 - T3) + 1
 C(LST1 +7)  = -(T9 - T8) + 1
 ```
 
-Each entry stores the *negated* time difference between adjacent tasks, plus one. The negation is a consequence of 1's-complement arithmetic and the CCS instruction's behavior — storing negated deltas allows the insertion search loop to use CCS directly as a "is there still time remaining?" test.
+每个条目存储相邻任务之间的*取反*时间差，加一。取反是 1 的补码算术和 CCS 指令行为的结果——存储取反的增量允许插入搜索循环直接将 CCS 用作"是否仍有剩余时间？"的测试。
 
-The +1 bias exists because CCS distinguishes four cases (positive, +0, negative, -0), and adding 1 ensures that a zero delta maps to +1 (positive), taking the correct CCS branch.
++1 偏置的存在是因为 CCS 区分四种情况（正、+0、负、-0），加 1 确保零增量映射为 +1（正），走正确的 CCS 分支。
 
-**LST2** — A 9-entry array of *2CADRs* (double-word complete addresses):
+**LST2** — *2CADR*（双字完整地址）的 9 项数组：
 
 ```
 C(LST2)      = 2CADR TASK1   (address + bank info)
@@ -53,25 +53,25 @@ C(LST2 +2)   = 2CADR TASK2
 C(LST2 +16)  = 2CADR TASK9
 ```
 
-Each 2CADR occupies two words: the first word is the address within the target bank, the second is a BBCON (combined bank register value including superbank). LST2 entries are spaced 2 words apart because each 2CADR is a double word.
+每个 2CADR 占两个字：第一个字是目标 bank 内的地址，第二个是 BBCON（包含超级 bank 的组合 bank 寄存器值）。LST2 条目间隔 2 个字，因为每个 2CADR 是双字。
 
-**TIME3** holds the time until the *first* task fires:
+**TIME3** 保存直到*第一个*任务触发的时间：
 
 ```
-C(TIME3) = 16384 - (T1 - T)    i.e., 1.0 - (T1 - T) in centiseconds
+C(TIME3) = 16384 - (T1 - T)    即 1.0 - (T1 - T)（以厘秒为单位）
 ```
 
-When TIME3 overflows (reaches +0 from POSMAX), it triggers T3RUPT, meaning task T1 is due.
+当 TIME3 溢出（从 POSMAX 到达 +0），触发 T3RUPT，表示任务 T1 到期。
 
-### The Sentinel: ENDTASK
+### 哨兵：ENDTASK
 
 ```agc
 ENDTASK         -2CADR  SVCT3
 ```
 
-(Line ~page 1121)
+（第约 1121 页）
 
-ENDTASK is a constant stored in fixed-fixed memory (not switched bank), initialized into all slots of LST2 at fresh start. Its key property is that **its address alone distinguishes it** — the insertion routine checks whether it has cascaded a task all the way to the bottom of the list by testing whether the displaced entry equals ENDTASK:
+ENDTASK 是存储在固定-固定内存（非可切换 bank）中的常量，在新启动时初始化到 LST2 的所有槽位。其关键属性是**仅凭其地址就能区分它**——插入例程通过测试被替换的条目是否等于 ENDTASK 来检查任务是否已级联到列表底部：
 
 ```agc
         DXCH    LST2 +16D
@@ -81,15 +81,15 @@ ENDTASK is a constant stored in fixed-fixed memory (not switched bank), initiali
         TCF     WTABORT         # FIXED SO ITS ADRES ALONE DISTINGUISHES IT.
 ```
 
-If the value displaced from the last LST2 slot is ENDTASK (i.e., adding ENDTASK to the address gives zero — they are complements), the insertion succeeded. If not, we've overflowed the list and abort with alarm 1203.
+如果从最后一个 LST2 槽替换出的值是 ENDTASK（即将 ENDTASK 加到地址上得到零——它们互补），插入成功。否则，我们溢出了列表，并以警报 1203 中止。
 
-When ENDTASK actually fires (because no real task replaced it), it runs SVCT3, which checks the drift flag and potentially schedules an IMU compensation task (NBDONLY). This is a clever dual-use: the sentinel doubles as a periodic housekeeping trigger.
+当 ENDTASK 实际触发时（因为没有真实任务替换它），它运行 SVCT3，检查漂移标志并可能调度 IMU 补偿任务（NBDONLY）。这是一种巧妙的双重用途：哨兵同时作为周期性维护触发器。
 
-The corresponding LST1 entries are initialized to NEG1/2 (octal 40000, i.e., -16383). Since T3RUPT adds POSMAX to this value before loading TIME3, the resulting TIME3 value gives a roughly 81.91-second interval between sentinel firings — the maximum single overflow period of a 14-bit counter at 10ms resolution.
+相应的 LST1 条目初始化为 NEG1/2（八进制 40000，即 -16383）。由于 T3RUPT 在加载 TIME3 之前将 POSMAX 加到此值，得到的 TIME3 值给出哨兵触发之间约 81.91 秒的间隔——10ms 分辨率下 14 位计数器的最大单次溢出周期。
 
-### Maximum Concurrent Tasks: 9
+### 最大并发任务数：9
 
-The arrays hold 9 tasks (8 LST1 delta entries define intervals between 9 time points, and LST2 has 9 double-word slots from LST2 through LST2+16). Attempting to insert a 10th task triggers:
+数组容纳 9 个任务（8 个 LST1 增量条目定义 9 个时间点之间的间隔，LST2 从 LST2 到 LST2+16 有 9 个双字槽）。尝试插入第 10 个任务会触发：
 
 ```agc
 WTABORT         TC      FILLED
@@ -99,19 +99,19 @@ FILLED          DXCH    WAITEXIT
                 OCT     01203
 ```
 
-Alarm code 1203 — a program abort. There is no graceful degradation; the system designers determined that 9 pending tasks would always be sufficient for mission operations. This is a hard real-time system with statically analyzed worst-case task counts.
+警报码 1203——程序中止。没有优雅降级；系统设计者确定 9 个待处理任务对于任务操作始终足够。这是一个具有静态分析最坏情况任务数的硬实时系统。
 
 ---
 
-## 2. T3RUPT and Task Dispatch
+## 2. T3RUPT 与任务分派
 
-### How TIME3 Triggers T3RUPT
+### TIME3 如何触发 T3RUPT
 
-TIME3 is a 15-bit 1's-complement counter incremented every 10ms by hardware. When it overflows (transitions from POSMAX = 37777 octal through +0), the hardware sets the T3RUPT interrupt request flag. If interrupts are enabled and no higher-priority conditions prevent it, the CPU vectors to address 4014 octal.
+TIME3 是一个 15 位 1 的补码计数器，由硬件每 10ms 递增一次。当它溢出（从 POSMAX = 37777 八进制经过 +0），硬件设置 T3RUPT 中断请求标志。如果中断已启用且没有更高优先级的条件阻止，CPU 跳转到地址 4014 八进制。
 
-The software loads TIME3 with `1.0 - (T1 - T)` where T1 is the absolute time the next task should fire and T is the current time. As time advances, TIME3 counts up. When `T1 - T` centiseconds have elapsed, TIME3 reaches POSMAX and overflows on the next tick.
+软件将 TIME3 加载为 `1.0 - (T1 - T)`，其中 T1 是下一个任务应触发的绝对时间，T 是当前时间。随着时间推进，TIME3 递增。当经过 `T1 - T` 厘秒后，TIME3 到达 POSMAX 并在下一个计时溢出。
 
-### The T3RUPT Handler: Dispatching the First Task
+### T3RUPT 处理程序：分派第一个任务
 
 ```agc
 T3RUPT          EXTEND
@@ -121,7 +121,7 @@ T3RUPT          EXTEND
                 QXCH    QRUPT
 ```
 
-**Lines (page 1128):** The ISR entry saves context. `EXTEND; ROR SUPERBNK` reads BBANK OR'd with the superbank bit from I/O channel 7 — this captures the full bank state. It's saved in BANKRUPT. Q is saved in QRUPT. Note: A and L are NOT saved here because they'll be loaded with the task's 2CADR momentarily.
+**（第 1128 页）：** ISR 入口保存上下文。`EXTEND; ROR SUPERBNK` 从 I/O 通道 7 读取 BBANK 与超级 bank 位的 OR 值——这捕获了完整的 bank 状态。保存在 BANKRUPT 中。Q 保存在 QRUPT 中。注意：A 和 L 在此处不保存，因为它们将立即被任务的 2CADR 加载。
 
 ```agc
 T3RUPT2         CAF     NEG1/2          # DISPATCH WAITLIST TASK.
@@ -135,13 +135,13 @@ T3RUPT2         CAF     NEG1/2          # DISPATCH WAITLIST TASK.
                 XCH     LST1
 ```
 
-This is a *rotation chain*. Starting with NEG1/2 in A:
-1. `XCH LST1+7` swaps A (NEG1/2) with LST1+7. Now A = old LST1+7, and LST1+7 = NEG1/2 (sentinel interval).
-2. `XCH LST1+6` swaps A (old LST1+7) with LST1+6. Now LST1+6 = old LST1+7.
-3. Continue up the chain...
-4. `XCH LST1` swaps A (old LST1+1) with LST1. Now A = old LST1+0 (the delta to the NEXT task), and the entire array has shifted up by one position with NEG1/2 inserted at the bottom.
+这是一个*旋转链*。从 A 中的 NEG1/2 开始：
+1. `XCH LST1+7` 将 A（NEG1/2）与 LST1+7 交换。现在 A = 旧 LST1+7，LST1+7 = NEG1/2（哨兵间隔）。
+2. `XCH LST1+6` 将 A（旧 LST1+7）与 LST1+6 交换。现在 LST1+6 = 旧 LST1+7。
+3. 继续沿链向上...
+4. `XCH LST1` 将 A（旧 LST1+1）与 LST1 交换。现在 A = 旧 LST1+0（到下一个任务的增量），整个数组向上移动了一个位置，NEG1/2 插入底部。
 
-After this chain, A contains the old LST1[0] value: `-(T2 - T1) + 1`.
+此链之后，A 包含旧 LST1[0] 的值：`-(T2 - T1) + 1`。
 
 ```agc
                 AD      POSMAX          # 2. SET T3 = 1.0 - T2 - T USING LIST 1.
@@ -151,19 +151,19 @@ After this chain, A contains the old LST1[0] value: `-(T2 - T1) + 1`.
                 TS      RUPTAGN         # SETS RUPTAGN TO +1 ON OVERFLOW.
 ```
 
-This is subtle and brilliant. Let's trace the arithmetic:
+这段代码微妙而精妙。让我们追踪其算术：
 
-- A = `-(T2 - T1) + 1` (from LST1[0])
-- `AD POSMAX` adds 16383. Result: `16383 - (T2 - T1) + 1 = 16384 - (T2 - T1)`
-- `ADS TIME3` adds this to the current TIME3 value.
+- A = `-(T2 - T1) + 1`（来自 LST1[0]）
+- `AD POSMAX` 加 16383。结果：`16383 - (T2 - T1) + 1 = 16384 - (T2 - T1)`
+- `ADS TIME3` 将此值加到当前 TIME3 值。
 
-But what *is* the current TIME3? At the moment T3RUPT fired, TIME3 had just overflowed. During the ISR preamble (saving context, doing the XCH chain), TIME3 has been ticking. Let's call the current TIME3 value `T_elapsed` (small, representing ticks since overflow).
+但当前 TIME3 是什么值呢？在 T3RUPT 触发的那一刻，TIME3 刚好溢出。在 ISR 序言期间（保存上下文，执行 XCH 链），TIME3 一直在计时。设当前 TIME3 值为 `T_elapsed`（小，表示自溢出以来的计时脉冲）。
 
-So: `TIME3 ← T_elapsed + 16384 - (T2 - T1)`
+因此：`TIME3 ← T_elapsed + 16384 - (T2 - T1)`
 
-This is exactly `1.0 - ((T2 - T1) - T_elapsed)` — the correct TIME3 value for firing at T2, accounting for time already elapsed during the ISR! The comment "SO T3 WON'T TICK DURING UPDATE" is a slight understatement — it means the TIME3 update is *inherently correct* regardless of how many ticks elapsed during the ISR.
+这恰好是 `1.0 - ((T2 - T1) - T_elapsed)`——在 T2 触发的正确 TIME3 值，考虑了 ISR 期间已流逝的时间！注释"SO T3 WON'T TICK DURING UPDATE"有些轻描淡写——它意味着 TIME3 更新*本质上*是正确的，无论 ISR 期间经过了多少计时脉冲。
 
-**RUPTAGN and cascading dispatch:**
+**RUPTAGN 与级联分派：**
 
 ```agc
                 TS      RUPTAGN
@@ -171,9 +171,9 @@ This is exactly `1.0 - ((T2 - T1) - T_elapsed)` — the correct TIME3 value for 
                 TS      RUPTAGN         # SETS RUPTAGN TO +1 ON OVERFLOW.
 ```
 
-After `ADS TIME3`, if TIME3 overflows (meaning T2 is also due NOW), A gets +1 (the TS skip-on-overflow behavior). `TS RUPTAGN` stores this. Then `CS ZERO` = -0. `TS RUPTAGN` — if A had been +1 (overflow), this path was skipped by the TS skip, so RUPTAGN stays at +1. If no overflow, RUPTAGN gets -0.
+`ADS TIME3` 后，如果 TIME3 溢出（意味着 T2 现在也到期），A 获得 +1（TS 溢出跳过行为）。`TS RUPTAGN` 存储此值。然后 `CS ZERO` = -0。`TS RUPTAGN`——如果 A 为 +1（溢出），此路径被 TS 跳过，所以 RUPTAGN 保持 +1。如果无溢出，RUPTAGN 获得 -0。
 
-After the task runs and calls TASKOVER:
+任务运行并调用 TASKOVER 后：
 ```agc
 TASKOVER        CCS     RUPTAGN         # IF +1 RETURN TO T3RUPT, IF -0 RESUME.
                 CAF     WAITBB
@@ -181,9 +181,9 @@ TASKOVER        CCS     RUPTAGN         # IF +1 RETURN TO T3RUPT, IF -0 RESUME.
                 TCF     T3RUPT2         # DISPATCH NEXT TASK IF IT WAS DUE.
 ```
 
-If RUPTAGN = +1 (next task was also due), we loop back to T3RUPT2 to dispatch it. If RUPTAGN = -0, the CCS falls through to the fourth branch (skip 3), restoring context and executing RESUME.
+如果 RUPTAGN = +1（下一个任务也到期），我们循环回 T3RUPT2 来分派它。如果 RUPTAGN = -0，CCS 落到第四个分支（跳过 3），恢复上下文并执行 RESUME。
 
-### The LST2 Dispatch Chain
+### LST2 分派链
 
 ```agc
                 EXTEND                  # DISPATCH TASK.
@@ -195,7 +195,7 @@ If RUPTAGN = +1 (next task was also due), we loop back to T3RUPT2 to dispatch it
                 DXCH    LST2
 ```
 
-Mirror image of LST1: loads -ENDTASK into A,L, then cascades through LST2 from bottom to top. Each DXCH swaps the A,L pair with consecutive LST2 entries, shifting the entire array down by one slot and inserting -ENDTASK (negated because DCS was used; the sign gets corrected implicitly) at the bottom. After the chain, A,L contain the old LST2[0] — the 2CADR of the task to dispatch.
+LST1 的镜像：将 -ENDTASK 加载到 A、L，然后从底部到顶部级联通过 LST2。每个 DXCH 将 A、L 对与连续的 LST2 条目交换，将整个数组向下移动一个槽，并在底部插入 -ENDTASK（取反是因为使用了 DCS；符号会隐式纠正）。链执行后，A、L 包含旧 LST2[0]——要分派任务的 2CADR。
 
 ```agc
                 XCH     L
@@ -205,11 +205,11 @@ Mirror image of LST1: loads -ENDTASK into A,L, then cascades through LST2 from b
                 DTCB
 ```
 
-The 2CADR's BBCON (in L) contains the superbank bit. `XCH L` puts it in A, `WRITE SUPERBNK` sets the superbank I/O channel, `XCH L` restores L. Then `DTCB` (which is `DXCH Z`) loads both Z (program counter) and BB (bank registers) from A,L — effectively jumping to the task's entry point with all banks correctly set.
+2CADR 的 BBCON（在 L 中）包含超级 bank 位。`XCH L` 将其放入 A，`WRITE SUPERBNK` 设置超级 bank I/O 通道，`XCH L` 恢复 L。然后 `DTCB`（即 `DXCH Z`）从 A、L 加载 Z（程序计数器）和 BB（bank 寄存器）——有效地以正确设置的所有 bank 跳转到任务的入口点。
 
-The task now runs in interrupt context with interrupts inhibited.
+任务现在在中断上下文中运行，中断被禁止。
 
-### TASKOVER: What Happens When a Task Finishes
+### TASKOVER：任务完成时发生什么
 
 ```agc
 TASKOVER        CCS     RUPTAGN         # IF +1 RETURN TO T3RUPT, IF -0 RESUME.
@@ -230,23 +230,23 @@ NOQBRSM         DXCH    ARUPT
                 RESUME
 ```
 
-CCS RUPTAGN has four paths:
-- **RUPTAGN > 0 (specifically +1):** Another task is due. Switch to WAITLIST bank, loop to T3RUPT2.
-- **RUPTAGN = +0:** Falls to `CAF WAITBB` — same as positive, dispatches next task.
-- **RUPTAGN < 0:** Falls through two more instructions to the resume path.
-- **RUPTAGN = -0:** Also falls to the resume path (skip 3 from CCS).
+CCS RUPTAGN 有四个路径：
+- **RUPTAGN > 0（具体为 +1）：** 另一个任务到期。切换到 WAITLIST bank，循环到 T3RUPT2。
+- **RUPTAGN = +0：** 落到 `CAF WAITBB`——与正值相同，分派下一个任务。
+- **RUPTAGN < 0：** 再经过两条指令落到恢复路径。
+- **RUPTAGN = -0：** 也落到恢复路径（CCS 的跳过 3）。
 
-The resume path restores superbank, Q, BBANK, and A,L from their saved locations, re-enables interrupts with RELINT, then executes the hardware RESUME instruction which restores Z from ZRUPT — returning to whatever code was interrupted.
+恢复路径从保存位置恢复超级 bank、Q、BBANK 和 A、L，用 RELINT 重新启用中断，然后执行硬件 RESUME 指令，从 ZRUPT 恢复 Z——返回到被中断的代码。
 
-Note the multiple entry points: NOQRSM skips Q restoration (for cases where Q was already handled), and NOQBRSM skips both Q and bank restoration.
+注意多个入口点：NOQRSM 跳过 Q 恢复（用于 Q 已处理的情况），NOQBRSM 跳过 Q 和 bank 恢复。
 
 ---
 
-## 3. Task Insertion
+## 3. 任务插入
 
-### The WAITLIST Entry Point
+### WAITLIST 入口点
 
-Calling convention:
+调用约定：
 ```agc
         CA      DELTAT          # Time in centiseconds (1-16250)
         TC      WAITLIST
@@ -264,16 +264,16 @@ WAITLIST        INHINT
  -1             TS      WAITADR         # BBCON WILL REMAIN IN L
 ```
 
-Let's trace this carefully:
+让我们仔细追踪：
 
-1. **On entry:** A = delta time, Q = return address (points to the 2CADR).
-2. `INHINT` — disable interrupts. Critical section begins.
-3. `XCH Q` — A ↔ Q. Now A = return address, Q = delta time.
-4. `TS WAITEXIT` — save return address. No overflow possible (it's a memory address), so no skip.
-5. `EXTEND; INDEX WAITEXIT; DCA 0` — uses INDEX to offset DCA by the return address. Since WAITEXIT points to the word after `TC WAITLIST` in the caller, and that word is the first half of the 2CADR, `DCA 0` indexed by WAITEXIT loads the 2CADR into A,L.
-6. `TS WAITADR` — saves the address portion (from A) into WAITADR. The BBCON remains in L.
+1. **入口时：** A = 增量时间，Q = 返回地址（指向 2CADR）。
+2. `INHINT`——禁用中断。关键区段开始。
+3. `XCH Q`——A ↔ Q。现在 A = 返回地址，Q = 增量时间。
+4. `TS WAITEXIT`——保存返回地址。不可能溢出（它是内存地址），所以不跳过。
+5. `EXTEND; INDEX WAITEXIT; DCA 0`——使用 INDEX 通过返回地址偏移 DCA。由于 WAITEXIT 指向调用方中 `TC WAITLIST` 之后的字，而那个字是 2CADR 的第一半，所以 `DCA 0` 以 WAITEXIT 为索引将 2CADR 加载到 A、L 中。
+6. `TS WAITADR`——将地址部分（来自 A）保存到 WAITADR。BBCON 留在 L 中。
 
-### TWIDDLE: The Optimized Entry Point
+### TWIDDLE：优化的入口点
 
 ```agc
 TWIDDLE         INHINT
@@ -286,7 +286,7 @@ TWIDDLE         INHINT
                 XCH     L
 ```
 
-TWIDDLE is an optimization for when the task address is in the same bank as the caller. Calling convention:
+TWIDDLE 是一个优化方案，用于任务地址与调用方在同一 bank 的情况。调用约定：
 ```agc
         CA      DELTAT
         TC      TWIDDLE
@@ -294,28 +294,15 @@ TWIDDLE is an optimization for when the task address is in the same bank as the 
         RELINT                  # Returns here
 ```
 
-Trace:
-1. A = delta time. `TS L` saves it in L.
-2. `CA POSMAX; ADS Q` — adds 16383 to Q. Since Q points to the ADRES word (a small address), this creates overflow. When ADS overflows, it stores the overflow-corrected value (Q-1) and sets A to +1, *skipping the next instruction* via the TS-skip behavior. Wait — ADS stores to Q AND to A. Actually, `ADS Q` adds A to Q, stores result in both A and Q. The overflow causes Q to get the corrected value (the original Q minus 1, approximately), and A gets +1.
+追踪：
+1. A = 增量时间。`TS L` 将其保存在 L 中。
+2. `CA POSMAX; ADS Q`——将 16383 加到 Q。由于 Q 指向 ADRES 字（一个小地址），这会产生溢出。当 ADS 溢出时，它存储溢出纠正后的值（Q-1），并将 A 设为 +1。
+3. `CA BBANK; EXTEND; ROR SUPERBNK`——读取当前 BBANK 与超级 bank 的 OR 值。这是调用方自己的 BBCON。
+4. `XCH L`——将此 BBCON 与 L（保存了增量时间）交换。现在 A = 增量时间，L = BBCON。
 
-   But actually the key insight: after `ADS Q`, Q now equals the return address minus 1 (since POSMAX + small address overflows, leaving the address decremented by 1 after overflow correction). This sets up Q so that when WAITLIST does `INDEX WAITEXIT; DCA 0`, the INDEX will be off by -1 from the normal case.
+然后执行落入 WAITLIST。WAITLIST 中的 `XCH Q; TS WAITEXIT` 保存返回地址。`INDEX WAITEXIT; DCA 0`——因为 TWIDDLE 调整了 Q 使其指向前一个字，这拾取了单个 ADRES 字（到 A）和后续字（RELINT，成为 L 中不关心的值——实际上 L 已经有了来自 TWIDDLE 设置的 BBCON）。
 
-3. `CA BBANK; EXTEND; ROR SUPERBNK` — reads current BBANK OR'd with superbank. This is the caller's own BBCON.
-4. `XCH L` — swaps this BBCON with L (which held the delta time). Now A = delta time, L = BBCON.
-
-Then execution falls through into WAITLIST. The `XCH Q; TS WAITEXIT` in WAITLIST saves the return address. The `INDEX WAITEXIT; DCA 0` — because TWIDDLE adjusted Q to point one word earlier, this picks up the single ADRES word (into A) and the following word (the RELINT, which becomes a don't-care in L — actually, L already has the BBCON from TWIDDLE's setup).
-
-Actually, let me re-examine. The `TS` skip in WAITLIST's line `-1 TS WAITADR` is labeled `-1`, meaning it's address WAITADR-1... No, the label `-1` is just a relative label. Let me re-read:
-
-```agc
-                INDEX   WAITEXIT        # IF TWIDDLING, THE TS SKIPS TO HERE
-                DCA     0               # PICK UP 2CADR OF TASK.
- -1             TS      WAITADR
-```
-
-The comment "IF TWIDDLING, THE TS SKIPS TO HERE" on the INDEX line is explaining that when coming from TWIDDLE, the `TS L` in TWIDDLE doesn't skip (no overflow from storing a delay time), so TWIDDLE falls through normally. The actual mechanism is that TWIDDLE has already set up A with the delta time and L with the BBCON, so when WAITLIST's code runs, everything is correctly positioned.
-
-### Bank Switching and the Core Insertion Logic
+### Bank 切换和核心插入逻辑
 
 ```agc
 DLY2            CAF     WAITBB          # ENTRY FROM FIXDELAY AND VARDELAY.
@@ -323,7 +310,7 @@ DLY2            CAF     WAITBB          # ENTRY FROM FIXDELAY AND VARDELAY.
                 TCF     WAIT2
 ```
 
-This switches to the bank containing WAIT2 (Bank 01), saving the caller's BBANK.
+切换到包含 WAIT2（Bank 01）的 bank，保存调用方的 BBANK。
 
 ```agc
 WAIT2           TS      WAITBANK        # BBANK OF CALLING PROGRAM.
@@ -332,9 +319,9 @@ WAIT2           TS      WAITBANK        # BBANK OF CALLING PROGRAM.
                 BZMF    WAITPOOH
 ```
 
-Saves the caller's bank. Checks if delta time (in Q) is zero or negative — if so, branches to WAITPOOH (error handler).
+保存调用方的 bank。检查 Q 中的增量时间是否为零或负——如果是，分支到 WAITPOOH（错误处理器）。
 
-### The TIME3 Race Condition Check
+### TIME3 竞争条件检查
 
 ```agc
                 CS      TIME3
@@ -342,9 +329,9 @@ Saves the caller's bank. Checks if delta time (in Q) is zero or negative — if 
                 CCS     A               # TEST 200 - C(TIME3).
 ```
 
-This is the most subtle part of the insertion code. It handles a race condition: TIME3 might overflow *between* the time we read it and the time we update it. The code tests whether TIME3 is less than 200 (octal). If TIME3 < 200, it probably just overflowed and its value represents `T - T1` (time since the last task was due) rather than `1.0 - (T1 - T)`.
+这是插入代码中最微妙的部分。它处理一个竞争条件：TIME3 可能在我们读取它和更新它之间*溢出*。代码测试 TIME3 是否小于 200（八进制）。如果 TIME3 < 200，它可能刚刚溢出，其值表示 `T - T1`（自上次任务到期以来的时间）而非 `1.0 - (T1 - T)`。
 
-The four-way CCS branch handles both cases:
+四路 CCS 分支处理两种情况：
 
 ```agc
                 AD      OCT40001        # OVERFLOW HAS OCCURRED. SET C(A) =
@@ -354,9 +341,9 @@ The four-way CCS branch handles both cases:
                 AD      Q               # RESULT = TD - T1 + 1.
 ```
 
-After this arithmetic (which I'll spare the full trace — it's carefully constructed to yield the same result regardless of the race), A contains `TD - T1 + 1`, where TD is the desired firing time and T1 is the currently-scheduled first task's time.
+经过这些算术运算（我将省略完整的追踪——它精心构建以产生相同结果，无论竞争如何），A 包含 `TD - T1 + 1`，其中 TD 是期望的触发时间，T1 是当前调度的第一个任务的时间。
 
-### The Insertion Search: WTLST5
+### 插入搜索：WTLST5
 
 ```agc
                 CCS     A               # TEST TD - T1 + 1.
@@ -368,11 +355,11 @@ After this arithmetic (which I'll spare the full trace — it's carefully constr
                 CS      Q
 ```
 
-If TD > T1 (new task fires after the current first task), we enter WTLST5 — the sorted insertion search.
+如果 TD > T1（新任务在当前第一个任务之后触发），我们进入 WTLST5——排序插入搜索。
 
-If TD ≤ T1 (new task fires BEFORE the current first task), we take the lower branch: the new task becomes the new first task, TIME3 is updated, and the old first task gets pushed into the list.
+如果 TD ≤ T1（新任务在当前第一个任务*之前*触发），我们走下方分支：新任务成为新的第一个任务，TIME3 被更新，旧的第一个任务被推入列表。
 
-**WTLST5 — The Unrolled Search Loop:**
+**WTLST5——展开的搜索循环：**
 
 ```agc
 WTLST5          CCS     A               # TEST TD - T2 + 1
@@ -390,14 +377,14 @@ WTLST5          CCS     A               # TEST TD - T2 + 1
                 OCT     2
 ```
 
-This is a fully unrolled binary-search-like scan. Each block:
-1. Tests `TD - T(n) + 1` via CCS.
-2. If positive (TD > T(n)): adds the next LST1 delta, computing `TD - T(n+1) + 1`, and continues to the next block.
-3. If zero or negative (TD ≤ T(n)): the insertion point is found. Calls `TC WTLST2` with the index following as an inline constant.
+这是一个完全展开的类二分搜索扫描。每个块：
+1. 通过 CCS 测试 `TD - T(n) + 1`。
+2. 如果为正（TD > T(n)）：加下一个 LST1 增量，计算 `TD - T(n+1) + 1`，继续到下一块。
+3. 如果为零或负（TD ≤ T(n)）：找到插入点。以内联常量作为后续内容调用 `TC WTLST2`。
 
-The unrolling eliminates loop overhead — critical in a system where every instruction takes 11.72µs and you're running inside INHINT. Nine iterations × 6 words each = 54 words of ROM, but guaranteed worst-case timing.
+展开消除了循环开销——在每条指令需要 11.72µs、并在 INHINT 内运行的系统中至关重要。九次迭代 × 6 字/次 = 54 字 ROM，但保证了最坏情况的时序。
 
-### WTLST2: The Actual Insertion
+### WTLST2：实际插入
 
 ```agc
 WTLST2          TS      WAITTEMP        # C(A) = -(TD - T + 1)
@@ -411,7 +398,7 @@ WTLST2          TS      WAITTEMP        # C(A) = -(TD - T + 1)
                 ADS     LST1 -1         #                N
 ```
 
-This modifies the LST1 entry *before* the insertion point. The old value was `-(T(n+1) - T(n)) + 1`. After adding `-(TD - T(n+1)) + 1`, the result is `-(TD - T(n)) + 1` — the new delta from T(n) to TD.
+这修改了插入点*之前*的 LST1 条目。旧值为 `-(T(n+1) - T(n)) + 1`。加上 `-(TD - T(n+1)) + 1` 后，结果为 `-(TD - T(n)) + 1`——从 T(n) 到 TD 的新增量。
 
 ```agc
                 CS      WAITTEMP
@@ -419,9 +406,9 @@ This modifies the LST1 entry *before* the insertion point. The old value was `-(
                 TCF     WTLST4
 ```
 
-Then falls into WTLST4 with A = `-(T(n+1) - TD) + 1` — the delta from TD to T(n+1), which becomes the new entry inserted after TD.
+然后以 A = `-(T(n+1) - TD) + 1` 落入 WTLST4——从 TD 到 T(n+1) 的增量，成为 TD 之后插入的新条目。
 
-### The XCH/DXCH Rotation Chain: WTLST4
+### XCH/DXCH 旋转链：WTLST4
 
 ```agc
 WTLST4          XCH     LST1
@@ -430,9 +417,9 @@ WTLST4          XCH     LST1
                 XCH     LST1 +7
 ```
 
-Starting from the INDEX'd entry point (INDEX Q; TCF WTLST4 jumps into the *middle* of this chain), each XCH pushes the current A value into the slot and picks up the old value, cascading everything down. The INDEX causes entry at position Q within the chain, so only entries at and below the insertion point are shifted.
+从索引的入口点开始（`INDEX Q; TCF WTLST4` 跳入链的*中间*），每个 XCH 将当前 A 值推入槽并取出旧值，将所有内容向下级联。INDEX 导致在链中的位置 Q 处入口，所以只有插入点及以下的条目被移动。
 
-The same pattern repeats for LST2 with DXCH (double exchange), shifting the 2CADR entries:
+LST2 的相同模式用 DXCH（双交换）重复，移动 2CADR 条目：
 
 ```agc
                 CA      WAITADR
@@ -445,9 +432,9 @@ The same pattern repeats for LST2 with DXCH (double exchange), shifting the 2CAD
                 DXCH    LST2 +16D
 ```
 
-The INDEX Q; TCF +1 causes a jump into the middle of the DXCH chain at the correct position.
+`INDEX Q; TCF +1` 导致在正确位置跳入 DXCH 链的中间。
 
-### Overflow Check
+### 溢出检查
 
 ```agc
                 DXCH    LST2 +16D
@@ -457,9 +444,9 @@ The INDEX Q; TCF +1 causes a jump into the middle of the DXCH chain at the corre
                 TCF     WTABORT         # OVERFLOW — ALARM 1203
 ```
 
-After the cascade, whatever was displaced from LST2+16 (the last slot) should be ENDTASK. Since ENDTASK is in fixed-fixed memory, `AD ENDTASK` adds the ENDTASK constant to the displaced address. If they're complements (meaning the displaced value WAS ENDTASK), the result is ±0, and BZF branches to the success return. If not, a real task was displaced — the list is full.
+级联之后，从 LST2+16（最后一个槽）替换出来的内容应该是 ENDTASK。由于 ENDTASK 在固定-固定内存中，`AD ENDTASK` 将 ENDTASK 常量加到被替换的地址。如果它们互补（即被替换的值确实是 ENDTASK），结果为 ±0，BZF 分支到成功返回。如果不是，一个真实的任务被替换出来——列表已满。
 
-### Return to Caller
+### 返回到调用方
 
 ```agc
 LVWTLIST        DXCH    WAITEXIT
@@ -467,13 +454,13 @@ LVWTLIST        DXCH    WAITEXIT
                 DTCB
 ```
 
-Loads the saved return address and bank info. `AD TWO` skips past the 2CADR (2 words) to reach L+3 — the instruction after the 2CADR in the caller's code. `DTCB` (DXCH Z) jumps there with banks restored.
+加载保存的返回地址和 bank 信息。`AD TWO` 跳过 2CADR（2 个字）到达 L+3——调用方代码中 2CADR 之后的指令。`DTCB`（DXCH Z）在 bank 恢复后跳转到那里。
 
 ---
 
-## 4. FIXDELAY, VARDELAY, and LONGCALL
+## 4. FIXDELAY、VARDELAY 和 LONGCALL
 
-### FIXDELAY: Inline Delay Constant
+### FIXDELAY：内联延迟常量
 
 ```agc
 FIXDELAY        INDEX   Q               # BOTH ROUTINES MUST BE CALLED UNDER
@@ -481,11 +468,11 @@ FIXDELAY        INDEX   Q               # BOTH ROUTINES MUST BE CALLED UNDER
                 INCR    Q               # IN WHICH THEY WERE CALLED.
 ```
 
-Called from within a running task (which is in interrupt context). Q points to the return address — which the programmer has placed a delay constant at. `INDEX Q; CAF 0` loads that constant. `INCR Q` advances Q past the constant so the task resumes at the right point.
+从运行中的任务（在中断上下文中）调用。Q 指向返回地址——程序员在那里放置了一个延迟常量。`INDEX Q; CAF 0` 加载该常量。`INCR Q` 将 Q 前进超过常量，使任务在正确位置恢复。
 
-Falls through to VARDELAY.
+落入 VARDELAY。
 
-### VARDELAY: Delay Value in A
+### VARDELAY：A 中的延迟值
 
 ```agc
 VARDELAY        XCH     Q               # DT TO Q. TASK ADRES TO WAITADR.
@@ -499,9 +486,9 @@ VARDELAY        XCH     Q               # DT TO Q. TASK ADRES TO WAITADR.
                 TCF     DLY2
 ```
 
-This builds a self-referential WAITLIST call: the "task" being scheduled is the *continuation* of the current task (Q holds the return address, which becomes WAITADR). The current BBANK+superbank is captured as the BBCON. WAITEXIT is set to DELAYEX (`TCF TASKOVER -2`), so after the task is inserted into the wait list, control goes to TASKOVER instead of returning to a caller.
+这建立了一个自引用的 WAITLIST 调用：被调度的"任务"是*当前任务的延续*（Q 保存返回地址，成为 WAITADR）。当前 BBANK+超级 bank 被捕获为 BBCON。WAITEXIT 设置为 DELAYEX（`TCF TASKOVER -2`），所以任务插入等待列表后，控制转到 TASKOVER 而非返回到调用方。
 
-Usage pattern:
+使用模式：
 ```agc
 MYTASK          ...                     # Do some work
                 CA      DT100MS         # 100ms delay
@@ -510,7 +497,7 @@ MYTASK          ...                     # Do some work
                 TC      TASKOVER        # Done
 ```
 
-Or with FIXDELAY:
+或使用 FIXDELAY：
 ```agc
 MYTASK          ...                     # Do some work
                 TC      FIXDELAY
@@ -519,15 +506,15 @@ MYTASK          ...                     # Do some work
                 TC      TASKOVER
 ```
 
-### LONGCALL: Beyond 162.5 Seconds
+### LONGCALL：超越 162.5 秒
 
-The maximum WAITLIST delay is 16250 centiseconds (162.5 seconds), limited by the 14-bit magnitude of a single-precision value. LONGCALL extends this to approximately 2.56 hours using an iterative approach.
+最大 WAITLIST 延迟为 16250 厘秒（162.5 秒），受单精度值的 14 位量值限制。LONGCALL 使用迭代方法将覆盖范围扩展到约 2.56 小时。
 
 ```agc
 LONGCALL        DXCH    LONGTIME        # OBTAIN THE DELTA TIME
 ```
 
-Called with a double-precision delta time in A,L (scaled as TIME2,TIME1 — the high word in A, low word in L). The 2CADR of the target task follows inline.
+以 A、L 中的双精度增量时间（以 TIME2、TIME1 为比例——高字在 A，低字在 L）调用。目标任务的 2CADR 内联于后。
 
 ```agc
 LONGCYCL        EXTEND                  # CAN WE SUCCESFULLY TAKE ABOUT 1.25
@@ -535,7 +522,7 @@ LONGCYCL        EXTEND                  # CAN WE SUCCESFULLY TAKE ABOUT 1.25
                 DAS     LONGTIME
 ```
 
-Each iteration subtracts BIT14 (octal 20000 = 8192 decimal in the low word, with 0 in the high word) from LONGTIME. BIT14 in centiseconds = 81.92 seconds ≈ 1.37 minutes.
+每次迭代从 LONGTIME 中减去 BIT14（八进制 20000 = 十进制 8192，低字中，高字为 0）。以厘秒计的 BIT14 = 81.92 秒 ≈ 1.37 分钟。
 
 ```agc
                 CCS     LONGTIME +1     # THE REASONING BEHIND THIS PART IS
@@ -546,7 +533,7 @@ Each iteration subtracts BIT14 (octal 20000 = 8192 decimal in the low word, with
                 TCF     MUCHTIME
 ```
 
-If significant time remains (LONGTIME still positive after subtraction), branch to MUCHTIME:
+如果还有大量时间剩余（减法后 LONGTIME 仍为正），分支到 MUCHTIME：
 
 ```agc
 MUCHTIME        CA      BIT14           # WE HAVE OVER OUR ABOUT 1.25 MINUTES
@@ -557,7 +544,7 @@ MUCHTIME        CA      BIT14           # WE HAVE OVER OUR ABOUT 1.25 MINUTES
                 TCF     LONGRTRN        # NOW EXIT PROPERLY
 ```
 
-This schedules LONGCYCL itself as a WAITLIST task with an 81.92-second delay. When it fires, it subtracts another BIT14 from LONGTIME and repeats until the remaining time fits in a single WAITLIST call.
+这将 LONGCYCL 本身调度为延迟 81.92 秒的 WAITLIST 任务。当它触发时，从 LONGTIME 再减去一个 BIT14 并重复，直到剩余时间可以放入单个 WAITLIST 调用。
 
 ```agc
 LASTTIME        CA      BIT14           # GET BACK THE CORRECT DELTA T FOR WAITLIST
@@ -567,26 +554,26 @@ LASTTIME        CA      BIT14           # GET BACK THE CORRECT DELTA T FOR WAITL
                 2CADR   GETCADR         # THE ENTRY TO OUR LONGCADR
 ```
 
-When the remaining time is small enough, adds back the last BIT14 subtraction (since we subtracted one too many), and schedules GETCADR — which simply loads the saved LONGCADR and jumps to the actual target task.
+当剩余时间足够小时，加回最后一次 BIT14 减法（因为我们多减了一次），并调度 GETCADR——它简单地加载保存的 LONGCADR 并跳转到实际的目标任务。
 
-### Timing Constraints Summary
+### 时序约束摘要
 
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| Minimum delay | 1 centisecond (10ms) | One TIME3 tick |
-| Maximum WAITLIST delay | 16250 centiseconds (162.5 sec) | `DTMAX` per header |
-| Maximum LONGCALL delay | ~2^28 × 10ms ≈ 31 days | DP counter range |
-| Practical LONGCALL max | ~2.56 hours | Limited by mission timeline |
-| Timer resolution | 10ms (TIME3 tick rate) | Hardware-determined |
-| Insertion time (worst case) | ~147µs + counter increments | Per header analysis |
+| 参数 | 值 | 注释 |
+|------|-----|-----|
+| 最小延迟 | 1 厘秒（10ms） | 一个 TIME3 计时脉冲 |
+| 最大 WAITLIST 延迟 | 16250 厘秒（162.5 秒） | 头部的 `DTMAX` |
+| 最大 LONGCALL 延迟 | ~2^28 × 10ms ≈ 31 天 | DP 计数器范围 |
+| 实际 LONGCALL 最大值 | ~2.56 小时 | 受任务时间线限制 |
+| 定时器分辨率 | 10ms（TIME3 计时率） | 硬件决定 |
+| 插入时间（最坏情况） | ~147µs + 计数器增量 | 头部分析 |
 
 ---
 
-## 5. Timing Analysis
+## 5. 时序分析
 
-### The Hand-Written WCET Analysis
+### 手写的 WCET 分析
 
-The module header (pages 1117-1118) contains a remarkably modern worst-case execution time (WCET) analysis:
+模块头部（第 1117-1118 页）包含一个极具现代感的最坏情况执行时间（WCET）分析：
 
 ```
 LET T0  = THE TIME OF THE TC WAITLIST
@@ -599,51 +586,51 @@ LET DELTD = THE ACTUAL TIME TAKEN TO GIVE CONTROL TO 2CADR
 THEN DELTD = TS + DELTA T - X + Y + Z + 1.05MS* + COUNTERS*
 ```
 
-Breaking this down:
+分解如下：
 
-- **147µs setup time (TS):** The time from `TC WAITLIST` to completing the list insertion. At 11.72µs per MCT, this is ~12.5 instructions — consistent with the critical path through WAITLIST → WAIT2 → insertion.
+- **147µs 设置时间（TS）：** 从 `TC WAITLIST` 到完成列表插入的时间。以每 MCT 11.72µs 计，约为 12.5 条指令——与 WAITLIST → WAIT2 → 插入的关键路径一致。
 
-- **X (counter variance):** TIME3 ticks every 10ms. The task's actual start time is quantized to the nearest 10ms boundary. X represents the sub-tick variance — how far into a 10ms period the insertion happened.
+- **X（计数器方差）：** TIME3 每 10ms 计时一次。任务的实际开始时间被量化到最近的 10ms 边界。X 表示亚计时脉冲方差——插入发生在 10ms 周期内的位置。
 
-- **Y (interrupt inhibit time):** If interrupts are inhibited (by INHINT) when T3RUPT fires, the dispatch is delayed until RELINT. This is the most significant source of jitter in practice — a long INHINT section elsewhere in the code directly delays all Waitlist tasks.
+- **Y（中断禁止时间）：** 如果当 T3RUPT 触发时中断被禁止（通过 INHINT），分派会延迟到 RELINT。这在实践中是抖动最重要的来源——代码其他地方的长 INHINT 区段直接延迟所有等待列表任务。
 
-- **Z (task queue drain time):** If multiple tasks are due simultaneously (RUPTAGN cascade), earlier tasks must complete before later ones start. Usually zero because simultaneous-due tasks are rare.
+- **Z（任务队列清空时间）：** 如果多个任务同时到期（RUPTAGN 级联），较早的任务必须在较晚的任务开始之前完成。通常为零，因为同时到期的任务很少见。
 
-- **1.05ms (Waitlist processing):** The T3RUPT handler's own execution time — the LST1/LST2 rotation chains, TIME3 update, and DTCB dispatch. At ~90 instructions × 11.72µs ≈ 1.05ms.
+- **1.05ms（等待列表处理）：** T3RUPT 处理程序自身的执行时间——LST1/LST2 旋转链、TIME3 更新和 DTCB 分派。约 90 条指令 × 11.72µs ≈ 1.05ms。
 
-- **Counters:** Unprogrammed sequences (PINC, MINC, etc.) steal CPU cycles for counter updates. Each takes 1 MCT (11.72µs), and multiple counters may need servicing.
+- **计数器：** 未编程序列（PINC、MINC 等）占用 CPU 周期进行计数器更新。每次需要 1 MCT（11.72µs），可能需要服务多个计数器。
 
-### Real-Time Guarantees
+### 实时保证
 
-The Waitlist provides **soft real-time** guarantees with bounded worst-case jitter:
+等待列表提供具有有界最坏情况抖动的**软实时**保证：
 
-1. **Deterministic insertion:** The unrolled search loop has fixed worst-case timing regardless of list occupancy (always traverses all 9 slots).
+1. **确定性插入：** 展开的搜索循环具有固定的最坏情况时序，与列表占用率无关（始终遍历所有 9 个槽）。
 
-2. **Bounded dispatch latency:** Task dispatch occurs within one T3RUPT handler execution of the scheduled time, plus any INHINT delays from foreground code.
+2. **有界分派延迟：** 任务分派在计划时间的一个 T3RUPT 处理程序执行内发生，加上前台代码的任何 INHINT 延迟。
 
-3. **No priority inversion:** Tasks execute in strict time order. There is no concept of task priority within the Waitlist — only the Executive has priorities.
+3. **无优先级反转：** 任务严格按时间顺序执行。等待列表中没有任务优先级的概念——只有执行模块有优先级。
 
-4. **Atomic list operations:** All list manipulations run with interrupts inhibited (INHINT at entry, running within the ISR for dispatch). No concurrent modification is possible.
+4. **原子列表操作：** 所有列表操作都在中断禁止下运行（入口时 INHINT，ISR 内运行以进行分派）。不可能并发修改。
 
-5. **Guaranteed overflow detection:** The ENDTASK sentinel check ensures list overflow is always detected and aborted (alarm 1203) rather than silently corrupting data.
+5. **保证溢出检测：** ENDTASK 哨兵检查确保列表溢出总是被检测并中止（警报 1203），而不是无声地破坏数据。
 
-### Comparison to Modern RTOS Timer Systems
+### 与现代 RTOS 定时器系统的比较
 
-| Aspect | AGC Waitlist | Modern RTOS (e.g., FreeRTOS) |
-|--------|-------------|------------------------------|
-| **Data structure** | Sorted array, linear insertion | Typically a delta list or timer wheel |
-| **Insertion complexity** | O(n) worst case, n=9 max | O(1) to O(log n) depending on structure |
-| **Dispatch complexity** | O(1) — always the first entry | O(1) — head of queue |
-| **Timer resolution** | 10ms (hardware-fixed) | Configurable (typically 1ms or less) |
-| **Max pending timers** | 9 (compile-time fixed) | Dynamic (heap-allocated) |
-| **Overflow handling** | Hard abort (alarm 1203) | Typically returns error code |
-| **Memory cost** | 27 words fixed | Per-timer overhead, heap fragmentation risk |
-| **Cascade dispatch** | RUPTAGN loop for simultaneous tasks | Typically processes all expired in one ISR |
-| **Long delays** | LONGCALL (iterative rescheduling) | 32/64-bit timers, no workaround needed |
-| **Jitter sources** | INHINT sections, counter servicing | Interrupt latency, higher-priority ISRs |
+| 方面 | AGC 等待列表 | 现代 RTOS（如 FreeRTOS） |
+|------|------------|------------------------|
+| **数据结构** | 排序数组，线性插入 | 通常是增量列表或定时器轮 |
+| **插入复杂度** | O(n) 最坏情况，n=9 最大 | O(1) 到 O(log n) 取决于结构 |
+| **分派复杂度** | O(1)——始终是第一个条目 | O(1)——队列头 |
+| **定时器分辨率** | 10ms（硬件固定） | 可配置（通常 1ms 或更少） |
+| **最大待处理定时器** | 9（编译时固定） | 动态（堆分配） |
+| **溢出处理** | 硬中止（警报 1203） | 通常返回错误码 |
+| **内存开销** | 27 字固定 | 每定时器开销，堆碎片风险 |
+| **级联分派** | RUPTAGN 循环处理同时任务 | 通常在一个 ISR 中处理所有过期 |
+| **长延迟** | LONGCALL（迭代重调度） | 32/64 位定时器，无需变通 |
+| **抖动来源** | INHINT 区段，计数器服务 | 中断延迟，高优先级 ISR |
 
-The AGC Waitlist's most striking characteristic is its extreme economy. The entire scheduler — insertion, dispatch, cascading, overflow detection, self-rescheduling, and long-delay support — fits in under 200 words of ROM. The sorted delta-list approach with fixed-size arrays was optimal for the constraints: a tiny number of tasks (never more than 9), hard real-time requirements, and an absolute premium on memory.
+AGC 等待列表最显著的特点是其极度的经济性。整个调度器——插入、分派、级联、溢出检测、自重调度和长延迟支持——全部压缩在不到 200 字的 ROM 中。排序增量列表与固定大小数组的方法对于约束条件而言是最优的：极少数量的任务（从未超过 9 个）、硬实时要求，以及对内存的绝对节约。
 
-Modern timer wheels and hierarchical timing facilities are designed for thousands of concurrent timers. The AGC never needed that scale — 9 tasks were sufficient because the entire system was designed from the ground up with that constraint in mind. Every subsystem knew exactly how many Waitlist slots it could consume, and the total was verified by static analysis during development.
+现代定时器轮和分层时序设施是为数千个并发定时器设计的。AGC 从未需要这种规模——9 个任务就足够了，因为整个系统从一开始就是在这种约束下设计的。每个子系统都清楚地知道它可以消耗多少等待列表槽，并且总数在开发期间通过静态分析得到验证。
 
-The WCET analysis in the header — written by hand in 1966 — anticipates techniques that wouldn't be formalized in real-time systems research until the 1980s. The MIT Instrumentation Lab engineers were doing what we'd now call schedulability analysis, by hand, in assembler, for a one-off computer architecture, with a margin of error measured in microseconds. The Waitlist is perhaps the most elegant piece of real-time systems engineering in the entire AGC codebase.
+头部中的 WCET 分析——1966 年手写——预示了直到 1980 年代才在实时系统研究中被正式化的技术。MIT 仪器实验室的工程师们正在做我们现在称为可调度性分析的工作，手工完成，用汇编语言，针对一种一次性计算机架构，误差以微秒计。等待列表可能是整个 AGC 代码库中最优雅的实时系统工程作品。

@@ -1,27 +1,27 @@
-# Lunar Landing Guidance Equations: The Code That Landed on the Moon
+# 月球着陆制导方程：让人类登上月球的代码
 
-## Overview
+## 概述
 
-`LUNAR_LANDING_GUIDANCE_EQUATIONS.agc` is the single most consequential file in the Apollo 11 codebase. It contains Programs 63, 64, 65, 66, and 67 — the guidance routines that flew the Lunar Module from powered descent initiation at ~50,000 feet to touchdown on the Sea of Tranquility.
+`LUNAR_LANDING_GUIDANCE_EQUATIONS.agc` 是阿波罗 11 号代码库中最具决定性意义的文件。它包含程序 63、64、65、66 和 67——引导登月舱从约 50,000 英尺高度的动力下降点火到在静海着陆的制导例程。
 
-This file lives in Luminary099, the Lunar Module's flight software (Luminary 1A, build 099). It was assembled on **July 14, 1969** — six days before the landing.
+该文件存在于 Luminary099——登月舱的飞行软件（Luminary 1A，第 099 版）。它于 **1969 年 7 月 14 日**汇编——距着陆六天前。
 
-The code spans pages 798–828 of the original MIT printout. It is a mixture of native AGC assembly and interpreter language, with the computationally intensive guidance math running on the AGC's software virtual machine (entered via `TC INTPRET`), and the time-critical control flow, display logic, and phase switching running in native assembly.
+代码跨越 MIT 原始打印件第 798–828 页。它是原生 AGC 汇编和解释器语言的混合，计算密集型的制导数学运行在 AGC 的软件虚拟机上（通过 `TC INTPRET` 进入），而时间关键型控制流、显示逻辑和阶段切换则以原生汇编运行。
 
 ---
 
-## 1. Architecture: The Flight Sequence Table
+## 1. 架构：飞行序列表
 
-The landing guidance is organized around a **state machine** driven by the variable `WCHPHASE`:
+着陆制导围绕由变量 `WCHPHASE` 驱动的**状态机**组织：
 
 ```
-WCHPHASE = -1  →  IGNALG    (Ignition Algorithm)
-WCHPHASE =  0  →  BRAKQUAD  (Braking Phase — P63)
-WCHPHASE =  1  →  APPRQUAD  (Approach Phase — P64)
-WCHPHASE =  2  →  VERTICAL  (Vertical Descent — P65/P66/P67)
+WCHPHASE = -1  →  IGNALG    （点火算法）
+WCHPHASE =  0  →  BRAKQUAD  （制动阶段——P63）
+WCHPHASE =  1  →  APPRQUAD  （进近阶段——P64）
+WCHPHASE =  2  →  VERTICAL  （垂直下降——P65/P66/P67）
 ```
 
-Rather than using if-else chains, the code uses **jump tables** — arrays of `TCF` (Transfer Control to Fixed) instructions indexed by `WCHPHASE`. Each guidance pass walks through a fixed pipeline of stages, and at each stage the appropriate handler is selected by indexing into the relevant table:
+代码不使用 if-else 链，而使用**跳转表**——以 `WCHPHASE` 为索引的 `TCF`（转移控制到固定地址）指令数组。每次制导过程经历固定的阶段流水线，在每个阶段通过索引相关表来选择适当的处理程序：
 
 ```agc
 # ROUTINES FOR STARTING NEW GUIDANCE PHASES:
@@ -49,24 +49,24 @@ AFTRGUID TCF    CGCALC          # BRAKQUAD
         TCF     STEER?          # VERTICAL
 ```
 
-The pipeline is:
+流水线是：
 
-1. **NEWPHASE** — phase transition logic
-2. **PREGUIDE** — pre-guidance computations (coordinate transforms, redesignation)
-3. **WHATGUID** — the actual guidance equations
-4. **AFTRGUID** — post-guidance (throttle, steering)
-5. **WHATEXIT** — exit and window vector computations
-6. **WHATDISP** — DSKY display updates
+1. **NEWPHASE**——阶段转换逻辑
+2. **PREGUIDE**——制导前计算（坐标变换、重新瞄准）
+3. **WHATGUID**——实际制导方程
+4. **AFTRGUID**——制导后（油门、转向）
+5. **WHATEXIT**——退出和窗口向量计算
+6. **WHATDISP**——DSKY 显示更新
 
-This table-driven architecture is elegant: adding a new phase means adding one entry to each table, not restructuring control flow. The `INDEX WCHPHASE` instruction adds the value of WCHPHASE to the next instruction's address, selecting the correct `TCF` from the table.
+这种表驱动架构很优雅：添加新阶段意味着在每个表中添加一个条目，而不是重构控制流。`INDEX WCHPHASE` 指令将 WCHPHASE 的值加到下一条指令的地址，从表中选择正确的 `TCF`。
 
 ---
 
-## 2. Entry Points
+## 2. 入口点
 
-### Normal Entry: LUNLAND
+### 普通入口：LUNLAND
 
-The guidance loop is called from SERVOUT (the servicer — the routine that processes IMU and PIPA data at ~2 Hz):
+制导循环从 SERVOUT（服务程序——以约 2 Hz 处理 IMU 和 PIPA 数据的例程）调用：
 
 ```agc
 LUNLAND     TC      PHASCHNG
@@ -76,11 +76,11 @@ LUNLAND     TC      PHASCHNG
             OCT     21000           #   JUST HIGHER THAN SERVICER'S PRIORITY
 ```
 
-The first action is restart protection. The AGC had no operating system in the modern sense, but it had a cooperative multitasking system (the Executive) and a restart/recovery system. `PHASCHNG` records the current program phase so that if a hardware restart occurs, the system can resume from a known state.
+第一个动作是重启保护。AGC 没有现代意义上的操作系统，但有一个协作多任务系统（执行模块）和一个重启/恢复系统。`PHASCHNG` 记录当前程序阶段，以便在硬件重启发生时，系统能从已知状态恢复。
 
-Priority 21 is "just higher than SERVICER's priority" — guidance must preempt the servicer but not critical interrupt handlers.
+优先级 21 是"刚好高于 SERVICER 优先级"——制导必须抢占服务程序，但不能抢占关键中断处理程序。
 
-### Ignition Algorithm Entry: ?GUIDSUB
+### 点火算法入口：?GUIDSUB
 
 ```agc
 ?GUIDSUB    EXIT
@@ -89,13 +89,13 @@ Priority 21 is "just higher than SERVICER's priority" — guidance must preempt 
             TCF     GUILDRET +2
 ```
 
-This is called during the ignition algorithm phase (before braking begins). It delivers N=3 passes of quadratic guidance to converge on the initial trajectory. The `EXIT` instruction returns from the interpreter to native AGC code. The label `?GUIDSUB` is notable — the `?` prefix is legal in AGC labels and was used by convention for subroutines called from other modules.
+这在点火算法阶段（制动开始之前）调用。它提供 N=3 次二次制导迭代以收敛到初始轨迹。`EXIT` 指令从解释器返回到原生 AGC 代码。标签 `?GUIDSUB` 值得注意——`?` 前缀在 AGC 标签中是合法的，按惯例用于从其他模块调用的子程序。
 
 ---
 
-## 3. GUILDENSTERN: The Auto-Modes Monitor (R13)
+## 3. GUILDENSTERN：自动模式监视器（R13）
 
-One of the most recognizable sections in all of Apollo software, named after a character from Shakespeare's *Hamlet* (and later Stoppard's *Rosencrantz and Guildenstern Are Dead*):
+整个阿波罗软件中最具辨识度的部分之一，以莎士比亚《哈姆雷特》（以及后来斯托帕德《罗森克兰兹和吉尔登斯特恩已死》）中的人物命名：
 
 ```agc
 # HERE IS THE PHILOSOPHY OF GUILDENSTERN: ON EVERY APPEARANCE OR
@@ -112,34 +112,34 @@ GUILDEN     EXTEND              # IS UN-AUTO-THROTTLE DISCRETE PRESENT?
             TCF     STARTP67    # YES
 ```
 
-The label `GUILDENSTERN` was split across two lines — `GUILDEN` on line one, `STERN` on line two. The transcription notes that `STERN` was "not originally a comment" — in the original source it was simply a continuation of the label on the next line, which was legal in YUL assembly syntax but not in modern yaYUL, so the transcribers commented it out.
+标签 `GUILDENSTERN` 被分成两行——第一行是 `GUILDEN`，第二行是 `STERN`。转录说明指出 `STERN`"原本不是注释"——在原始源代码中，它只是下一行上标签的延续，这在 YUL 汇编语法中是合法的，但在现代 yaYUL 中不合法，所以转录者将其注释掉了。
 
-### What GUILDENSTERN Does
+### GUILDENSTERN 的功能
 
-Every guidance cycle, before computing guidance commands, GUILDENSTERN checks the astronaut's control mode by reading discrete inputs from I/O channels:
+每个制导周期，在计算制导命令之前，GUILDENSTERN 通过读取 I/O 通道的离散输入来检查宇航员的控制模式：
 
-1. **Channel 30, Bit 5**: The "un-auto-throttle" discrete. If present → start P67 (manual throttle)
-2. **Channel 31, Bit 13**: The "un-attitude-hold" discrete. If present with attitude-hold selected → start P66 (rate-of-descent mode)
+1. **通道 30，第 5 位**："非自动油门"离散。如果存在 → 启动 P67（手动油门）
+2. **通道 31，第 13 位**："非姿态保持"离散。如果存在且选择了姿态保持 → 启动 P66（下降率模式）
 
-The logic flow:
+逻辑流程：
 
 ```
-Is manual throttle discrete present?
-  YES → STARTP67 (manual throttle, always)
-  NO  → Are we in P67?
-    YES → STARTP66 (astronaut released manual throttle, go to ROD mode)
-    NO  → Is attitude-hold discrete present?
-      YES → GUILDRET (all's well, continue current program)
-      NO  → Are we in P66?
-        YES → Has there been a restart?
-          YES → Reinitialize P66 but keep VDGVERT
-          NO  → Continue with ROD
-        NO  → Has ROD switch been clicked?
-          YES → STARTP66
-          NO  → GUILDRET (continue automatic landing)
+手动油门离散是否存在？
+  是 → STARTP67（手动油门，始终）
+  否 → 我们在 P67 吗？
+    是 → STARTP66（宇航员释放了手动油门，切换到 ROD 模式）
+    否 → 姿态保持离散是否存在？
+      是 → GUILDRET（一切正常，继续当前程序）
+      否 → 我们在 P66 吗？
+        是 → 是否发生了重启？
+          是 → 重新初始化 P66 但保留 VDGVERT
+          否 → 继续 ROD
+        否 → ROD 开关是否被点击？
+          是 → STARTP66
+          否 → GUILDRET（继续自动着陆）
 ```
 
-### Starting P66
+### 启动 P66
 
 ```agc
 STARTP66    TC      FASTCHNG
@@ -150,9 +150,9 @@ DEC66       DEC     66
             DXCH    VDGVERT     #   ALTITUDE RATE.
 ```
 
-This is critical: when switching to P66, the desired altitude rate (`VDGVERT`) is initialized to the **current** altitude rate (`HDOTDISP`). This means the astronaut doesn't experience a jolt — the guidance seamlessly transitions to maintaining whatever descent rate was current at the moment of switchover.
+这是关键：切换到 P66 时，期望高度率（`VDGVERT`）被初始化为**当前**高度率（`HDOTDISP`）。这意味着宇航员不会感受到冲击——制导无缝过渡到维持切换时刻的下降速率。
 
-The initialization continues in interpreter mode:
+初始化以解释器模式继续：
 
 ```agc
 STRTP66A    TC      INTPRET
@@ -178,35 +178,35 @@ STRTP66A    TC      INTPRET
             EXIT
 ```
 
-This loads PIPA (accelerometer) biases as a vector, scales by `BIASFACT` (655.36 B-28), stores the result as `VBIAS`, and initializes the ROD computation state. The bias correction is essential — the PIPAs had known biases that had to be compensated in software.
+这将 PIPA（加速度计）偏置作为向量加载，以 `BIASFACT`（655.36 B-28）缩放，将结果存为 `VBIAS`，并初始化 ROD 计算状态。偏置校正至关重要——PIPA 有已知偏置，必须在软件中补偿。
 
-### The "TEMPORARY" Comment
+### "临时"注释
 
 ```agc
             TC      BANKCALL        # TEMPORARY, I HOPE HOPE HOPE
             CADR    STOPRATE        # TEMPORARY, I HOPE HOPE HOPE
 ```
 
-This is one of the most famous comments in the codebase. The call to `STOPRATE` (which zeros the attitude rate commands) was added as a temporary fix and the programmer hoped it would be replaced with a proper solution. It was not. It flew to the Moon exactly as written. The triple "HOPE" conveys the programmer's resigned awareness that temporary code in flight software has a way of becoming permanent.
+这是代码库中最著名的注释之一。对 `STOPRATE`（将姿态角速率命令清零）的调用是作为临时修复添加的，程序员希望它能被正式解决方案替换。它没有被替换。它就这样飞上了月球。三重"HOPE"传达了程序员的无奈意识：飞行软件中的临时代码往往会变成永久代码。
 
 ---
 
-## 4. Phase Initialization
+## 4. 阶段初始化
 
-### TTFINCR: Time-to-Go and Landing Site Update
+### TTFINCR：剩余时间和着陆点更新
 
-Every guidance pass begins with `TTFINCR`, which performs two critical operations:
+每次制导过程从 `TTFINCR` 开始，它执行两个关键操作：
 
-**1. Update TTF/8 (time-to-go divided by 8):**
+**1. 更新 TTF/8（剩余时间除以 8）：**
 
 ```agc
 # TTF/8 UPDATED FOR TIME SINCE LAST PASS:
 #     TTF/8 = TTF/8 + (TPIP - TPIPOLD)/8
 ```
 
-The time-to-go is stored divided by 8 for scaling reasons — keeping the value small enough to fit in the AGC's fractional arithmetic without overflow.
+剩余时间被存储为除以 8——这样可以保持数值足够小，以适应 AGC 的小数算术而不溢出。
 
-**2. Update the landing site vector for lunar rotation:**
+**2. 更新月球自转的着陆点向量：**
 
 ```agc
 # LANDING SITE VECTOR UPDATED FOR LUNAR ROTATION:
@@ -214,9 +214,9 @@ The time-to-go is stored divided by 8 for scaling reasons — keeping the value 
 #     LAND = /LAND/ UNIT(LAND - LAND(TPIP - TPIPOLD) * WM)
 ```
 
-The Moon is rotating beneath the LM during descent. `WM` is the lunar angular velocity vector. The code computes the cross product of `LAND` with `WM`, scales by the elapsed time, subtracts from `LAND`, normalizes, and rescales to the original magnitude (`/LAND/`). This keeps the landing site vector in the correct inertial position as the Moon rotates.
+下降过程中月球在登月舱下方旋转。`WM` 是月球角速度向量。代码计算 `LAND` 与 `WM` 的叉积，按经过时间缩放，从 `LAND` 中减去，归一化，并重新缩放到原始量级（`/LAND/`）。这在月球旋转时将着陆点向量保持在正确的惯性位置。
 
-The implementation in interpreter code:
+解释器代码中的实现：
 
 ```agc
 TTFINCR     TC      INTPRET
@@ -237,7 +237,7 @@ TTFINCR     TC      INTPRET
             EXIT
 ```
 
-After computing the rotated landing vector in `LANDTEMP`, the code exits the interpreter and uses native AGC instructions with `FASTCHNG` (restart protection) to atomically update the live `LAND` vector:
+在 `LANDTEMP` 中计算旋转后的着陆向量后，代码退出解释器，并使用带 `FASTCHNG`（重启保护）的原生 AGC 指令原子地更新实时 `LAND` 向量：
 
 ```agc
             EXTEND
@@ -251,15 +251,15 @@ After computing the rotated landing vector in `LANDTEMP`, the code exits the int
             DXCH    LAND     +4
 ```
 
-The vector has three DP components (x, y, z), each stored as two consecutive words. `DXCH` (double exchange) atomically swaps two words between the A,L register pair and memory — six `DXCH` operations update the full 3D vector.
+向量有三个 DP 分量（x、y、z），每个存储为两个连续字。`DXCH`（双交换）原子地在 A、L 寄存器对与内存之间交换两个字——六次 `DXCH` 操作更新完整的三维向量。
 
 ---
 
-## 5. P63 — Braking Phase
+## 5. P63——制动阶段
 
-### Pre-Guidance: CALCRGVG and RGVGCALC
+### 制导前：CALCRGVG 和 RGVGCALC
 
-P63 uses `CALCRGVG` for its first pass (coming from the ignition algorithm) and `RGVGCALC` for subsequent passes. The difference is that `CALCRGVG` first computes velocity from the integration output with a trim correction:
+P63 在第一次制导过程（来自点火算法）使用 `CALCRGVG`，在后续过程使用 `RGVGCALC`。区别在于 `CALCRGVG` 首先通过积分输出加修正计算速度：
 
 ```agc
 CALCRGVG    TC      INTPRET
@@ -272,9 +272,9 @@ CALCRGVG    TC      INTPRET
             EXIT
 ```
 
-`VATT1` is the velocity from the integration routine, `REFSMMAT` is the reference-to-stable-member matrix, and `UNFC/2` is a trim correction term computed on the previous pass.
+`VATT1` 是积分例程的速度，`REFSMMAT` 是参考到稳定构件的矩阵，`UNFC/2` 是上一次制导过程计算的修正项。
 
-`RGVGCALC` then computes the state in guidance coordinates:
+`RGVGCALC` 然后在制导坐标中计算状态：
 
 ```agc
 # VELOCITY RELATIVE TO THE SURFACE:
@@ -284,31 +284,31 @@ CALCRGVG    TC      INTPRET
 #     VGU = CG*(V - WM × R)
 ```
 
-Where:
-- `CG` is the guidance-to-platform coordinate transformation matrix
-- `R` is the position vector
-- `V` is the velocity vector  
-- `WM` is the lunar angular velocity
-- `LAND` is the landing site vector
-- `RGU` and `VGU` are position and velocity in the guidance coordinate frame
+其中：
+- `CG` 是制导到平台的坐标变换矩阵
+- `R` 是位置向量
+- `V` 是速度向量
+- `WM` 是月球角速度
+- `LAND` 是着陆点向量
+- `RGU` 和 `VGU` 是制导坐标系中的位置和速度
 
-The code also computes horizontal velocity for display:
+代码还计算显示用的水平速度：
 
 ```agc
 # HORIZONTAL VELOCITY FOR DISPLAY:
 #     VHORIZ = 8 ABVAL(0, VG₂, VG₁)
 ```
 
-This forms a vector from the two horizontal components of the guidance velocity (zeroing the vertical component), takes its absolute value, and scales by 8. This is the value displayed to the astronaut during P65.
+这从制导速度的两个水平分量（将垂直分量清零）形成向量，取绝对值，乘以 8。这是在 P65 期间显示给宇航员的值。
 
-### Depression Angle (LOOKANGL)
+### 俯角（LOOKANGL）
 
 ```agc
 # DEPRESSION ANGLE FOR DISPLAY:
 #     LOOKANGL = ARCSIN(UNIT(R - LAND) · XNBPIP)
 ```
 
-The code computes the angle between the line-of-sight to the landing site and the LM's X-axis (the body axis pointing "up" out of the ascent stage). This is the LPD (Landing Point Designator) angle displayed during P64.
+代码计算到着陆点视线与登月舱 X 轴（指向上方穿出上升级的机体轴）之间的夹角。这是在 P64 期间显示的 LPD（着陆点指示器）角度。
 
 ```agc
             CA      MPAC            # COMPUTE LOOKANGLE ITSELF
@@ -321,11 +321,11 @@ The code computes the angle between the line-of-sight to the landing site and th
             TS      LOOKANGL        # LOOKANGL FOR DISPLAY DURING P64
 ```
 
-The sine value (in MPAC from the dot product) is doubled, then `SPARCSIN` computes the arcsine. A half-degree offset (`1/2DEG = +.00278`) is added — likely a calibration correction for the LPD window markings. The result is multiplied by 180 to convert from the AGC's fractional-circle representation to degrees.
+正弦值（来自点积的 MPAC）被加倍，然后 `SPARCSIN` 计算反正弦。加上半度偏移（`1/2DEG = +.00278`）——可能是 LPD 窗口刻度的校准校正。结果乘以 180，将 AGC 的小数圆表示转换为度数。
 
-### TTF/8 Computation: The Root Finder
+### TTF/8 计算：求根器
 
-The heart of the braking guidance is the computation of TTF/8 (time-to-go divided by 8). This is done by finding the root of a cubic polynomial:
+制动制导的核心是 TTF/8（剩余时间除以 8）的计算。这通过找到三次多项式的根来实现：
 
 ```agc
 # TTF/8 COMPUTATION
@@ -349,9 +349,9 @@ TTF/8CL     TC      INTPRETX
             EXIT
 ```
 
-The coefficients A(0) through A(3) encode the guidance constraint equations. The subscript `2` denotes the vertical component (the third component in the guidance coordinate system, indexed by `+4` since each DP value occupies two words).
+系数 A(0) 到 A(3) 编码制导约束方程。下标 `2` 表示垂直分量（制导坐标系中的第三分量，由 `+4` 索引，因为每个 DP 值占两个字）。
 
-The polynomial is then solved using Newton's method via `ROOTPSRS`:
+然后通过 `ROOTPSRS` 使用牛顿法求解多项式：
 
 ```agc
             EXTEND
@@ -363,14 +363,14 @@ The polynomial is then solved using Newton's method via `ROOTPSRS`:
             TC      ROOTPSRS        # YIELDS TTF/8 IN MPAC
 ```
 
-`ROOTPSRS` is a general-purpose double-precision root finder by Allan Klumpp (credited in the comments). It uses Newton's method with convergence checking and gives up after 8 iterations. The code documentation is unusually thorough:
+`ROOTPSRS` 是 Allan Klumpp 编写的通用双精度求根器（在注释中有署名）。它使用牛顿法进行收敛检查，8 次迭代后放弃。代码文档异常详尽：
 
 ```agc
 # ROOTPSRS FINDS ONE ROOT OF THE POWER SERIES A(N)X^N + A(N-1)X^(N-1) + ... + A(1)X + A(0)
 # USING NEWTON'S METHOD STARTING WITH AN INITIAL GUESS FOR THE ROOT.
 ```
 
-The return convention is notable: normal return is to `TC ROOTPSRS + 3` (skipping two words), while failure to converge returns to `TC ROOTPSRS + 1`. This skip-on-success pattern allows the alarm handler to sit in the "fall-through" position:
+返回约定值得注意：正常返回到 `TC ROOTPSRS + 3`（跳过两个字），而无法收敛则返回到 `TC ROOTPSRS + 1`。这种"成功跳过"模式允许报警处理程序位于"直通"位置：
 
 ```agc
             INDEX   WCHPHASE
@@ -383,9 +383,9 @@ The return convention is notable: normal return is to `TC ROOTPSRS + 3` (skippin
 
 ---
 
-## 6. The Main Guidance Equation (QUADGUID)
+## 6. 主制导方程（QUADGUID）
 
-This is the central guidance law, documented in the source comments:
+这是核心制导律，在源注释中有文档说明：
 
 ```
 AS PUBLISHED:
@@ -401,19 +401,19 @@ AS HERE PROGRAMMED:
                       TTF/8
 ```
 
-This is a **quadratic guidance law** — it computes the commanded acceleration (`ACG`) as a function of:
-- `ADG` — the desired (target) acceleration
-- `VDG` — the desired (target) velocity
-- `VG` — the current velocity (in guidance coordinates)
-- `RDG` — the desired (target) position
-- `RG` — the current position (in guidance coordinates)
-- `TTF` — time to go (TTF/8 × 8)
+这是一个**二次制导律**——它将指令加速度（`ACG`）计算为以下量的函数：
+- `ADG`——期望（目标）加速度
+- `VDG`——期望（目标）速度
+- `VG`——当前速度（制导坐标系）
+- `RDG`——期望（目标）位置
+- `RG`——当前位置（制导坐标系）
+- `TTF`——剩余时间（TTF/8 × 8）
 
-The equation is algebraically identical in both forms. The "as programmed" form avoids explicit TTF² computation by nesting divisions by TTF/8, and the 3/4 factor absorbs scale differences.
+两种形式在代数上是等价的。"如编程所示"的形式通过嵌套除以 TTF/8 来避免显式 TTF² 计算，3/4 因子吸收了比例差异。
 
-### Lead-Time Compensation
+### 超前时间补偿
 
-Before the main equation, there's a subtle correction:
+在主方程之前，有一个微妙的修正：
 
 ```agc
 QUADGUID    CS      TTF/8
@@ -428,9 +428,9 @@ QUADGUID    CS      TTF/8
             TS      BUF             # -RATIO OF LAG-DIMINISHED TTF TO TTF
 ```
 
-This computes a ratio that accounts for the computational lag — the time between when sensor data is sampled and when the computed thrust command takes effect. `LEADTIME` is negative (it represents how far ahead the guidance should "look"). The `POSMAX` addition followed by the `CS L / AD L` idiom clamps negative values to zero — a safeguard to prevent the ratio from going negative near touchdown.
+这计算了一个比率，用于补偿计算延迟——传感器数据采样到计算出的推力命令生效之间的时间。`LEADTIME` 是负数（表示制导应该"向前看"多远）。`POSMAX` 加法后跟 `CS L / AD L` 习语将负值夹零——防止比率在接近着陆时变为负值的保障。
 
-The ratio and its square are then used to compute coefficients for each term of the guidance equation:
+比率和其平方然后用于计算制导方程每个项的系数：
 
 ```agc
             EXTEND
@@ -454,11 +454,11 @@ The ratio and its square are then used to compute coefficients for each term of 
             TS      30D             # COEFFICIENT FOR ADG TERM
 ```
 
-This chain of additions builds four distinct coefficients from combinations of the ratio and ratio². These coefficients modify the standard guidance equation to account for computational lag, effectively "predicting forward" so the thrust command is correct when it actually takes effect.
+这串加法从比率和比率²的组合构建出四个不同的系数。这些系数修改标准制导方程以补偿计算延迟，有效地"向前预测"，使推力命令在实际生效时是正确的。
 
-> **Uncertainty flag:** I can follow the algebra that produces these four coefficients, but I cannot independently verify that the specific combinations of `BUF` (ratio) and `BUF+1` (ratio²) produce the correct lead-time-compensated guidance law without access to the original Guidance System Operations Plan (GSOP) derivation. The pattern is consistent with a Taylor expansion of the guidance law evaluated at `t + lead_time` rather than `t`.
+> **不确定性标记：** 我能跟随产生这四个系数的代数运算，但如果没有原始制导系统操作计划（GSOP）推导，我无法独立验证 `BUF`（比率）和 `BUF+1`（比率²）的特定组合是否产生了正确的超前时间补偿制导律。该模式与在 `t + lead_time` 而非 `t` 处评估的制导律的泰勒展开一致。
 
-### The Guidance Computation Itself
+### 制导计算本身
 
 ```agc
             TC      INTPRETX
@@ -483,18 +483,18 @@ This chain of additions builds four distinct coefficients from combinations of t
             VAD
 ```
 
-In interpreter pseudo-code, this computes:
+用解释器伪代码表示，这计算：
 
-1. `coeff_vgu × VGU` — push to stack
-2. `coeff_vdg × VDG` — push to stack
-3. `(RDG - RGU) / TTF/8` — scaled range-to-go rate
-4. Scale by `coeff_rdg`, add accumulated terms
-5. Divide by `TTF/8` again, scale by 3/4
-6. Add `coeff_adg × ADG` — the target acceleration
+1. `coeff_vgu × VGU`——压入栈
+2. `coeff_vdg × VDG`——压入栈
+3. `(RDG - RGU) / TTF/8`——缩放后的剩余距离速率
+4. 以 `coeff_rdg` 缩放，加入累积项
+5. 再除以 `TTF/8`，以 3/4 缩放
+6. 加 `coeff_adg × ADG`——目标加速度
 
-The result is the commanded acceleration vector in guidance coordinates.
+结果是制导坐标系中的指令加速度向量。
 
-### Gravity Compensation (AFCCALC1)
+### 重力补偿（AFCCALC1）
 
 ```agc
 AFCCALC1    VXM     VSL1            # VERGUID COMES HERE
@@ -506,9 +506,9 @@ AFCCALC1    VXM     VSL1            # VERGUID COMES HERE
             STORE   UNFC/2          # UNFC/2 NEED NOT BE UNITIZED
 ```
 
-The commanded acceleration is transformed from guidance coordinates to stable-member coordinates via the `CG` matrix (`VXM` = vector × matrix, `VSL1` = vector shift left 1 for scaling). Then gravitational acceleration (`GDT/2`, scaled by `GSCALE = 100 B-11`) is subtracted. The result `UNFC/2` is the force command that the engine must produce — it's the guidance command minus gravity, because gravity is "free" (the engine doesn't need to create it).
+指令加速度通过 `CG` 矩阵从制导坐标转换到稳定构件坐标（`VXM` = 向量×矩阵，`VSL1` = 向量左移 1 位用于缩放）。然后减去引力加速度（`GDT/2`，以 `GSCALE = 100 B-11` 缩放）。结果 `UNFC/2` 是引擎必须产生的力命令——它是制导命令减去重力，因为重力是"免费的"（引擎不需要产生它）。
 
-### Thrust Limiting (AFCCALC2)
+### 推力限制（AFCCALC2）
 
 ```agc
 AFCCALC2    STODL   /AFC/           # MAGNITUDE OF AFC FOR THROTTLE
@@ -527,15 +527,15 @@ AFCCALC3    SQRT    DAD
                     UNFC/2 +4
 ```
 
-This computes the maximum available horizontal acceleration: given the total available thrust (`HIGHESTF / MASS`) and the vertical and out-of-plane components already committed, how much acceleration is available in the downrange direction? If the answer would be negative (the engine can't provide enough thrust for the vertical and out-of-plane demands), the horizontal component is clamped to zero.
+这计算最大可用水平加速度：在给定总可用推力（`HIGHESTF / MASS`）和已承诺的垂直及平面外分量的情况下，下行距离方向还有多少加速度可用？如果答案将为负值（引擎无法提供足够推力满足垂直和平面外需求），水平分量被夹零。
 
-`HIGHESTF = 4.34546769 B-12` — this is the maximum thrust of the LM descent engine in the AGC's internal units.
+`HIGHESTF = 4.34546769 B-12`——这是 AGC 内部单位中登月舱下降引擎的最大推力。
 
 ---
 
-## 7. CG Matrix: The Guidance Coordinate Frame
+## 7. CG 矩阵：制导坐标系
 
-`CGCALC` erects the guidance-to-stable-member transformation matrix:
+`CGCALC` 建立制导到稳定构件的变换矩阵：
 
 ```agc
 CGCALC      CAF     EBANK5
@@ -547,7 +547,7 @@ CGCALC      CAF     EBANK5
             DCA     TCGFBRAK
 ```
 
-This double-indexed lookup retrieves a time parameter that depends on the current phase (braking vs. approach). The code then checks whether this time has been reached:
+这个双重索引查找检索取决于当前阶段（制动对进近）的时间参数。代码然后检查这个时间是否已到达：
 
 ```agc
             AD      TTF/8
@@ -560,9 +560,9 @@ This double-indexed lookup retrieves a time parameter that depends on the curren
             NOOP
 ```
 
-This is an AGC idiom for testing whether a DP value is non-negative. The double `CCS` tests both words — if either is positive, control goes to `EXTLOGIC` (skip the matrix update). Only when both words are non-positive (time has been reached) does the matrix get updated.
+这是 AGC 中测试 DP 值是否非负的习语。双重 `CCS` 测试两个字——如果任何一个为正，控制转到 `EXTLOGIC`（跳过矩阵更新）。只有当两个字都是非正时（时间已到），矩阵才会更新。
 
-The matrix construction itself uses the landing site vector as the primary axis:
+矩阵构建本身使用着陆点向量作为主轴：
 
 ```agc
             VLOAD   UNIT
@@ -587,19 +587,19 @@ The matrix construction itself uses the landing site vector as the primary axis:
             STORE   CG +14          # THIRD ROW
 ```
 
-The first row of `CG` is `UNIT(LAND)` — the unit vector toward the landing site, which defines "down" in guidance coordinates.
+`CG` 的第一行是 `UNIT(LAND)`——指向着陆点的单位向量，在制导坐标系中定义"向下"。
 
-The second row is constructed from the cross product of an adjusted range vector with `LAND`, then normalized. The "NUMERO MYSTERIOSO" comment refers to `GAINBRAK` — a gain constant whose derivation was apparently mysterious even to the programmers.
+第二行由调整后的距离向量与 `LAND` 的叉积构成，然后归一化。"NUMERO MYSTERIOSO"注释指的是 `GAINBRAK`——一个增益常量，其推导对程序员来说显然也是神秘的。
 
-The third row is the cross product of rows 1 and 2, forming a right-handed orthogonal coordinate system.
+第三行是第 1 行和第 2 行的叉积，形成右手正交坐标系。
 
-> **Uncertainty flag:** The exact purpose of the `GAINBRAK` gain in the second row computation is unclear from the code alone. It appears to rotate the guidance frame based on the angular momentum term (`ANGTERM`), possibly to align the frame with the expected trajectory curvature. Without the GSOP derivation I cannot verify this interpretation.
+> **不确定性标记：** 仅从代码来看，`GAINBRAK` 增益在第二行计算中的确切目的不清楚。它似乎根据角动量项（`ANGTERM`）旋转制导坐标系，可能是为了将坐标系与期望的轨迹曲率对齐。没有 GSOP 推导，我无法验证这一解释。
 
 ---
 
-## 8. Phase Transitions: P63 → P64 → P65/P66/P67
+## 8. 阶段转换：P63 → P64 → P65/P66/P67
 
-### EXTLOGIC: The Phase Switch
+### EXTLOGIC：阶段切换
 
 ```agc
 EXTLOGIC    INDEX   WCHPHASE
@@ -620,16 +620,16 @@ EXSPOT1     EXTEND
             TS      FLPASS0         # RESET PASS COUNTER
 ```
 
-The transition condition is simple: when `TTF/8 + TENDBRAK ≤ 0` (tested via `BZMF` — Branch Zero or Minus to Fixed), the current phase's time-to-go has expired, and `WCHPHASE` is incremented. `TENDBRAK` is a negative number representing how far before the target time the transition should occur.
+转换条件很简单：当 `TTF/8 + TENDBRAK ≤ 0`（通过 `BZMF`——零或负分支到固定地址——测试），当前阶段的剩余时间已过期，`WCHPHASE` 递增。`TENDBRAK` 是一个负数，表示转换应在目标时间之前多早发生。
 
-- **P63 → P64**: `WCHPHASE` goes from 0 to 1. `STARTP64` is called, which sets the program number to 64, augments TTF/8 by `DELTTFAP`, enables RUPT10 (for the redesignation hand controller), and initializes the redesignation flag.
-- **P64 → P65**: `WCHPHASE` goes from 1 to 2. `P65START` sets program number to 65 and enables X-axis override.
+- **P63 → P64**：`WCHPHASE` 从 0 到 1。调用 `STARTP64`，将程序号设置为 64，将 TTF/8 增加 `DELTTFAP`，启用 RUPT10（用于重新瞄准手动控制器），并初始化重新瞄准标志。
+- **P64 → P65**：`WCHPHASE` 从 1 到 2。`P65START` 设置程序号为 65 并启用 X 轴超控。
 
 ### P65 → P66/P67
 
-The transition from P65 to P66 or P67 is not time-based — it's driven by astronaut input, handled by GUILDENSTERN (see Section 3). When the astronaut engages the attitude-hold or manual throttle discretes, GUILDENSTERN switches the program mode while keeping `WCHPHASE = 2`.
+从 P65 到 P66 或 P67 的转换不是基于时间的——它由宇航员输入驱动，由 GUILDENSTERN 处理（见第 3 节）。当宇航员接通姿态保持或手动油门离散时，GUILDENSTERN 切换程序模式，同时保持 `WCHPHASE = 2`。
 
-Within `WCHPHASE = 2`, the variable `WCHVERT` selects among P65, P66, and P67:
+在 `WCHPHASE = 2` 内，变量 `WCHVERT` 在 P65、P66 和 P67 之间选择：
 
 ```agc
 VERTGUID    CCS     WCHVERT
@@ -638,18 +638,18 @@ VERTGUID    CCS     WCHVERT
 # P65 falls through to P65VERT
 ```
 
-This uses the CCS (Count, Compare, and Skip) four-way branch:
-- `WCHVERT > 0` → P67 (manual throttle; `WCHVERT` is set to 10 by `STARTP67`)
-- `WCHVERT = +0` → P66 (rate of descent)
-- `WCHVERT < 0` → P65 falls through (automatic vertical descent; `WCHVERT` is set to -2 by `P65START`)
+这使用 CCS（计数、比较和跳过）四路分支：
+- `WCHVERT > 0` → P67（手动油门；`WCHVERT` 由 `STARTP67` 设置为 10）
+- `WCHVERT = +0` → P66（下降率）
+- `WCHVERT < 0` → P65 直通（自动垂直下降；`WCHVERT` 由 `P65START` 设置为 -2）
 
 ---
 
-## 9. P64 — Approach Phase with Redesignation
+## 9. P64——带重新瞄准的进近阶段
 
-### Landing Point Redesignation (REDESIG)
+### 着陆点重新瞄准（REDESIG）
 
-During P64, the astronaut can redesignate the landing point using the hand controller. The redesignation logic is the pre-guidance computation for the approach phase:
+在 P64 期间，宇航员可以使用手动控制器重新瞄准着陆点。重新瞄准逻辑是进近阶段的制导前计算：
 
 ```agc
 REDESIG     CA      FLAGWRD6        # IS REDFLAG SET?
@@ -662,9 +662,9 @@ REDESIG     CA      FLAGWRD6        # IS REDFLAG SET?
             BZF     RGVGCALC        # YES: SKIP REDESIGNATION LOGIC
 ```
 
-Two conditions must be met: `REDFLAG` must be set (enabled by P64CEED when the astronaut "proceeds" on the flashing display), and `TREDES` must be non-zero (it counts down to zero as TTF decreases — redesignation is disabled near the end of the approach).
+必须满足两个条件：`REDFLAG` 必须被设置（当宇航员在闪烁显示上"继续"时由 P64CEED 启用），并且 `TREDES` 必须非零（随着 TTF 减小倒计时到零——在进近末段重新瞄准被禁用）。
 
-The redesignation itself modifies the `LAND` vector:
+重新瞄准本身修改 `LAND` 向量：
 
 ```agc
             INHINT
@@ -679,9 +679,9 @@ The redesignation itself modifies the `LAND` vector:
             TS      AZINCR1
 ```
 
-`ELINCR1` and `AZINCR1` are the accumulated elevation and azimuth increments from the hand controller (accumulated by the PITFALL interrupt handler, discussed below). They are atomically transferred to working copies and zeroed under interrupt inhibit (`INHINT`). This is a classic double-buffer pattern for safely passing data from an interrupt handler to a main-loop computation.
+`ELINCR1` 和 `AZINCR1` 是来自手动控制器的累积仰角和方位角增量（由下面讨论的 PITFALL 中断处理程序累积）。它们在中断禁止（`INHINT`）下原子地传输到工作副本并清零。这是安全地将数据从中断处理程序传递到主循环计算的经典双缓冲模式。
 
-The redesignation math moves the landing point along the LOS (line of sight):
+重新瞄准数学沿视线（LOS）移动着陆点：
 
 ```agc
             VLOAD   VSU
@@ -699,7 +699,7 @@ The redesignation math moves the landing point along the LOS (line of sight):
             VAD     PUSH            # RESULTING VECTOR IS 1/2 REAL SIZE
 ```
 
-The elevation increment rotates the LOS around the LM's Y body axis (cross-range), while the azimuth increment moves it along the Y body axis. A depression angle check prevents the redesignated point from being too close to the horizon:
+仰角增量围绕登月舱的 Y 机体轴（交叉方向）旋转 LOS，而方位角增量沿 Y 机体轴移动它。俯角检查防止重新瞄准点太靠近地平线：
 
 ```agc
             DLOAD   DSU             # MAKE SURE REDESIGNATION IS NOT
@@ -711,9 +711,9 @@ The elevation increment rotates the LOS around the LM's Y body axis (cross-range
             STORE   0
 ```
 
-`DEPRCRIT = -.02 B-1` — the critical depression angle. If the computed depression is below this threshold, it's clamped.
+`DEPRCRIT = -.02 B-1`——临界俯角。如果计算出的俯角低于此阈值，则被夹住。
 
-### The PITFALL Interrupt Handler: Redesignator Trap
+### PITFALL 中断处理程序：重新瞄准陷阱
 
 ```agc
 PITFALL     XCH     BANKRUPT
@@ -725,9 +725,9 @@ PITFALL     XCH     BANKRUPT
             TCF     RESUME
 ```
 
-`PITFALL` is the RUPT10 handler — it fires when the astronaut moves the redesignation hand controller. It first checks that we're actually in P64 (there's no reason to process redesignation inputs in other programs), and resumes if not.
+`PITFALL` 是 RUPT10 处理程序——当宇航员移动重新瞄准手动控制器时触发。它首先检查我们是否确实在 P64（在其他程序中处理重新瞄准输入没有意义），如果不是则恢复。
 
-If in P64, it reads the controller bits, sets up a monitoring task, and returns:
+如果在 P64 中，它读取控制器位，设置监视任务，并返回：
 
 ```agc
             EXTEND
@@ -743,9 +743,9 @@ If in P64, it reads the controller bits, sets up a monitoring task, and returns:
             TCF     RESUME
 ```
 
-The names `ELVIRA` and `ZERLINA` are opera character references — `ELVIRA` from Mozart's *Don Giovanni*, `ZERLINA` from the same opera. `ELVIRA` holds the current state of the controller bits; `ZERLINA` is a timeout counter.
+名字 `ELVIRA` 和 `ZERLINA` 是歌剧角色引用——`ELVIRA` 来自莫扎特的《唐·乔瓦尼》，`ZERLINA` 来自同一部歌剧。`ELVIRA` 保存控制器位的当前状态；`ZERLINA` 是超时计数器。
 
-`REDESMON` (Redesignator Monitor) polls the controller at intervals, waiting for the astronaut to release the switch:
+`REDESMON`（重新瞄准监视器）定期轮询控制器，等待宇航员释放开关：
 
 ```agc
 REDESMON    EXTEND
@@ -761,7 +761,7 @@ REDESMON    EXTEND
             TCF     COUNT'EM        # Y: COUNT 'EM, RESET RUPT, TERMINATE
 ```
 
-When the switch is released (bits disappear), `COUNT'EM` accumulates the azimuth and elevation increments:
+当开关释放（位消失）时，`COUNT'EM` 累积方位角和仰角增量：
 
 ```agc
 COUNT'EM    ...
@@ -778,11 +778,11 @@ COUNT'EM    ...
             ADS     ELINCR1
 ```
 
-Each "click" of the controller adds a fixed increment:
-- `AZEACH = .03491` — 2 degrees of azimuth per click
-- `ELEACH = .00873` — 0.5 degrees of elevation per click
+控制器每次"点击"添加固定增量：
+- `AZEACH = .03491`——每次点击 2 度方位角
+- `ELEACH = .00873`——每次点击 0.5 度仰角
 
-The bit assignments are documented:
+位分配有文档说明：
 
 ```agc
 +ELBIT      =       BIT2            # -PITCH
@@ -791,15 +791,15 @@ The bit assignments are documented:
 -AZBIT      =       BIT6
 ```
 
-Note the inversion: `+ELBIT` corresponds to `-PITCH`. The LPD window markings were calibrated so that "pitch down" (negative pitch) moved the landing point further away (positive elevation in the LPD frame).
+注意反转：`+ELBIT` 对应 `-PITCH`。LPD 窗口刻度被校准，使"俯仰向下"（负俯仰）将着陆点移得更远（LPD 坐标系中的正仰角）。
 
 ---
 
-## 10. P66 — Rate of Descent Mode
+## 10. P66——下降率模式
 
-P66 is the semi-automatic landing mode. The computer controls attitude to maintain vertical descent; the astronaut controls descent rate via the ROD (Rate of Descent) switch.
+P66 是半自动着陆模式。计算机控制姿态以保持垂直下降；宇航员通过 ROD（下降率）开关控制下降率。
 
-### ROD Task
+### ROD 任务
 
 ```agc
 RODTASK     CAF     PRIO22
@@ -810,9 +810,9 @@ RODTASK     CAF     PRIO22
             TCF     TASKOVER
 ```
 
-`RODTASK` runs every second (scheduled by `TWIDDLE` with a 1-second delay) at priority 22. It spawns the `RODCOMP` job to compute the ROD guidance.
+`RODTASK` 每秒运行一次（由 `TWIDDLE` 以 1 秒延迟调度），优先级 22。它生成 `RODCOMP` 作业来计算 ROD 制导。
 
-### RODCOMP: The ROD Computation
+### RODCOMP：ROD 计算
 
 ```agc
 RODCOMP     INHINT
@@ -823,9 +823,9 @@ RODCOMP     INHINT
             DAS     VDGVERT         # UPDATE DESIRED ALTITUDE RATE.
 ```
 
-`RODCOUNT` accumulates clicks from the ROD switch (via the `DESCBITS` interrupt handler). Each click adds or subtracts from the desired vertical rate `VDGVERT`. The count is atomically read and zeroed under interrupt inhibit.
+`RODCOUNT` 累积来自 ROD 开关的点击（通过 `DESCBITS` 中断处理程序）。每次点击从期望垂直速率 `VDGVERT` 中增加或减少。计数在中断禁止下原子地读取和清零。
 
-The ROD trap handler is elegantly simple:
+ROD 陷阱处理程序优雅地简单：
 
 ```agc
 DESCBITS    MASK    BIT7            # BIT 7 = - RATE INCREMENT
@@ -836,19 +836,19 @@ DESCBITS    MASK    BIT7            # BIT 7 = - RATE INCREMENT
             TCF     RESUME          # TRAP IS RESET WHEN SWITCH IS RELEASED
 ```
 
-Bit 7 means "decrease rate" (descend faster), bit 6 means "increase rate" (descend slower or ascend). The `CCS / CS TWO / AD ONE` pattern converts: if bit 7 present, A is positive after `CCS`, so `CS TWO` = -2, `AD ONE` = -1; if bit 7 absent (bit 6 must be present), A is zero after `CCS`, so skip to `AD ONE` = +1. Each click changes `RODCOUNT` by ±1.
+第 7 位表示"降低速率"（下降更快），第 6 位表示"提高速率"（下降更慢或上升）。`CCS / CS TWO / AD ONE` 模式转换：如果第 7 位存在，`CCS` 后 A 为正，所以 `CS TWO` = -2，`AD ONE` = -1；如果第 7 位不存在（第 6 位必须存在），`CCS` 后 A 为零，所以跳到 `AD ONE` = +1。每次点击将 `RODCOUNT` 变化 ±1。
 
-### P66 Guidance Law
+### P66 制导律
 
-The P66 guidance is substantially more complex than P63/P64. It runs in `RODCOMP` and performs:
+P66 制导律比 P63/P64 复杂得多。它在 `RODCOMP` 中运行，执行：
 
-1. **PIPA reading and bias correction** — reads the three accelerometer channels, applies bias corrections
-2. **Velocity update** — integrates acceleration to get current velocity, applying gravity compensation
-3. **Altitude rate computation** — dots the velocity with the unit position vector to get HDOT (altitude rate)
-4. **Altitude update** — computes current altitude
-5. **Throttle command** — computes the required thrust to achieve the desired descent rate
+1. **PIPA 读取和偏置校正**——读取三个加速度计通道，应用偏置校正
+2. **速度更新**——积分加速度得到当前速度，应用重力补偿
+3. **高度率计算**——将速度与单位位置向量点积得到 HDOT（高度率）
+4. **高度更新**——计算当前高度
+5. **油门命令**——计算实现期望下降率所需的推力
 
-The throttle law:
+油门律：
 
 ```agc
             STODL   HDOTDISP
@@ -866,9 +866,9 @@ The throttle law:
                     TAUROD
 ```
 
-The altitude rate error (`VDGVERT - HDOTDISP`) is divided by `TAUROD` (a time constant) to get the commanded acceleration. This is a simple proportional controller: if the actual descent rate differs from the desired rate, command an acceleration proportional to the error.
+高度率误差（`VDGVERT - HDOTDISP`）除以 `TAUROD`（时间常数）得到指令加速度。这是一个简单的比例控制器：如果实际下降率与期望速率不同，命令与误差成比例的加速度。
 
-The throttle computation also includes thrust limits:
+油门计算还包括推力限制：
 
 ```agc
             PDDL    DDV
@@ -892,15 +892,15 @@ AFCSPOT     DLOAD
             STODL   /AFC/
 ```
 
-The commanded acceleration is clamped between `MINFORCE/MASS` and `MAXFORCE/MASS` — the LM descent engine had a minimum throttle setting (about 10% — the engine couldn't be throttled below this without instability) and a maximum.
+指令加速度被夹在 `MINFORCE/MASS` 和 `MAXFORCE/MASS` 之间——登月舱下降引擎有最小油门设置（约 10%——引擎无法在不失稳的情况下节流到此以下）和最大值。
 
-> **Uncertainty flag:** The P66 guidance law involves multiple intermediate computations (the `ITRPNT1` and `ITRPNT2` labels suggest this was iteratively developed). The exact scaling of the PIPA readings, the lag compensation via `LAG/TAU`, and the `SHFTFACT`/`SCALEFAC` constants would require cross-referencing with the GSOP and the PIPA calibration data to fully verify. The overall structure — proportional altitude-rate control with thrust limiting — is clear, but the numerical precision of each intermediate step is difficult to verify from the code alone.
+> **不确定性标记：** P66 制导律涉及多个中间计算（`ITRPNT1` 和 `ITRPNT2` 标签表明这是迭代开发的）。PIPA 读数的精确缩放、通过 `LAG/TAU` 的滞后补偿以及 `SHFTFACT`/`SCALEFAC` 常量需要与 GSOP 和 PIPA 校准数据交叉参考才能完全验证。整体结构——带推力限制的比例高度率控制——是清楚的，但每个中间步骤的数值精度仅从代码来看难以验证。
 
 ---
 
-## 11. P65 — Automatic Vertical Descent
+## 11. P65——自动垂直下降
 
-P65 is the simplest guidance mode — a linear velocity tracking law:
+P65 是最简单的制导模式——线性速度跟踪律：
 
 ```agc
 # THE P65 GUIDANCE EQUATION IS AS FOLLOWS:
@@ -917,15 +917,15 @@ P65VERT     TC      INTPRET
                     AFCCALC1
 ```
 
-The commanded acceleration is simply the velocity error divided by a time constant. `V2FG` is the target velocity vector for vertical descent, `VGU` is the current velocity in guidance coordinates, and `TAUVERT` is the guidance time constant. This drives the LM toward the desired vertical descent velocity profile.
+指令加速度简单地是速度误差除以时间常数。`V2FG` 是垂直下降的目标速度向量，`VGU` 是制导坐标系中的当前速度，`TAUVERT` 是制导时间常数。这驱动登月舱向期望的垂直下降速度剖面趋近。
 
-The `GOTO AFCCALC1` shares the gravity compensation and thrust computation with the quadratic guidance.
+`GOTO AFCCALC1` 与二次制导共用重力补偿和推力计算。
 
 ---
 
-## 12. P67 — Manual Throttle
+## 12. P67——手动油门
 
-P67 gives the astronaut full manual control:
+P67 给宇航员完全手动控制：
 
 ```agc
 P67VERT     TC      PHASCHNG        # TERMINATE GROUP 3.
@@ -937,13 +937,13 @@ P67VERT     TC      PHASCHNG        # TERMINATE GROUP 3.
                     VHORCOMP
 ```
 
-P67 terminates the guidance group (group 3 — no more automatic guidance) and goes directly to `VHORCOMP`, which only computes the horizontal velocity for display purposes. The astronaut controls both attitude and throttle manually. The computer's only role is computing and displaying `VHORIZ` (horizontal velocity) so the astronaut knows when to cut the engine.
+P67 终止制导组（第 3 组——不再有自动制导），直接转到 `VHORCOMP`，后者只计算用于显示的水平速度。宇航员手动控制姿态和油门。计算机唯一的作用是计算和显示 `VHORIZ`（水平速度），使宇航员知道何时关闭引擎。
 
 ---
 
-## 13. Display Updates
+## 13. 显示更新
 
-### P63 Display: V06N63
+### P63 显示：V06N63
 
 ```agc
 P63DISPS    CAF     V06N63
@@ -951,12 +951,12 @@ DISPCOMN    TC      BANKCALL
             CADR    REGODSPR
 ```
 
-Verb 06 Noun 63 displays:
-- R1: Altitude rate (HDOTDISP)
-- R2: Altitude (HCALC1)  
-- R3: (flight-specific, typically lateral velocity)
+Verb 06 Noun 63 显示：
+- R1：高度率（HDOTDISP）
+- R2：高度（HCALC1）
+- R3：（飞行特定，通常是横向速度）
 
-### P64 Display: V06N64 (Flashing)
+### P64 显示：V06N64（闪烁）
 
 ```agc
 P64DISPS    CA      TREDES          # HAS TREDES REACHED ZERO?
@@ -977,23 +977,23 @@ P64DISPS    CA      TREDES          # HAS TREDES REACHED ZERO?
             TCF     ENDLLJOB
 ```
 
-The P64 display is **flashing** until the astronaut "proceeds" (presses PRO on the DSKY), which enables the redesignation logic. This is a deliberate human-factors design: the astronaut must actively confirm they want to take control of landing point selection. After proceeding, the display becomes static (non-flashing).
+P64 显示是**闪烁的**，直到宇航员"继续"（在 DSKY 上按 PRO），这启用重新瞄准逻辑。这是一个刻意的人因设计：宇航员必须主动确认他们想要控制着陆点选择。继续后，显示变为静态（不闪烁）。
 
-`REFLASHR` returns to one of three locations depending on the astronaut's response:
-- TERMINATE (first return) → `GOTOPOOH` (abort to idle)
-- PROCEED (second return) → `P64CEED` (enable redesignation)
-- RECYCLE (third return) → `P64DISPS` (refresh display)
+`REFLASHR` 根据宇航员的响应返回三个位置之一：
+- 终止（第一个返回）→ `GOTOPOOH`（中止到空闲）
+- 继续（第二个返回）→ `P64CEED`（启用重新瞄准）
+- 刷新（第三个返回）→ `P64DISPS`（刷新显示）
 
-### P65/P66/P67 Display: V06N60
+### P65/P66/P67 显示：V06N60
 
 ```agc
 VERTDISP    CAF     V06N60
             TCF     DISPCOMN
 ```
 
-Verb 06 Noun 60 displays altitude rate, altitude, and (for P66) the current descent rate command.
+Verb 06 Noun 60 显示高度率、高度和（对于 P66）当前下降率命令。
 
-### Display Suppression
+### 显示抑制
 
 ```agc
 DISPEXIT    EXTEND
@@ -1006,13 +1006,13 @@ DISPEXIT    EXTEND
             BZF     ENDLLJOB
 ```
 
-The display is killed every cycle (`-PHASE3` is set to -0, terminating group 3's restart protection) and restored by the next guidance cycle. The `FLUNDISP` flag can suppress displays entirely — used during critical phases where display updates would waste precious CPU time.
+每个周期显示都被终止（`-PHASE3` 设置为 -0，终止第 3 组的重启保护），并由下一个制导周期恢复。`FLUNDISP` 标志可以完全抑制显示——在关键阶段使用，此时显示更新会浪费宝贵的 CPU 时间。
 
 ---
 
-## 14. Window Vector and Steering
+## 14. 窗口向量和转向
 
-### EXBRAK: Braking Phase Exit
+### EXBRAK：制动阶段退出
 
 ```agc
 EXBRAK      TC      INTPRET
@@ -1023,9 +1023,9 @@ EXBRAK      TC      INTPRET
             TCF     STEER?
 ```
 
-During braking, the window pointing vector is simply `UNIT(R)` — point the LM's window straight up (away from the Moon). This is the "window up" attitude used during the braking burn.
+在制动过程中，窗口指向向量简单地是 `UNIT(R)`——将登月舱窗口直接朝上（远离月球）。这是制动燃烧期间使用的"窗口朝上"姿态。
 
-### EXNORM: Normal Exit (P64)
+### EXNORM：正常退出（P64）
 
 ```agc
 EXNORM      TC      INTPRET
@@ -1041,7 +1041,7 @@ EXNORM      TC      INTPRET
             EXIT
 ```
 
-During approach, the window vector is `UNIT(LAND - R)` — point toward the landing site. This is then blended with a backup vector based on the projection angle:
+在进近过程中，窗口向量是 `UNIT(LAND - R)`——指向着陆点。然后根据投影角与备用向量混合：
 
 ```agc
             CS      MPAC            # GET COEFFICIENT FOR CG +14
@@ -1059,9 +1059,9 @@ During approach, the window vector is `UNIT(LAND - R)` — point toward the land
             ADS     BUF +1          # RESULT IS 0 IF PROJ - PROJMIN NEGATIVE
 ```
 
-The blending uses `PROJMAX` (sin 25°/8) and `PROJMIN` (sin 15°/8) to create a smooth transition between the landing-site-pointing vector and a backup vector (row 3 of the CG matrix) when the look angle is between 15° and 25°. Below 15°, the landing site is too close to the horizon and the backup vector takes over entirely.
+混合使用 `PROJMAX`（sin 25°/8）和 `PROJMIN`（sin 15°/8）在朝向着陆点的向量和备用向量（CG 矩阵的第 3 行）之间创建平滑过渡，当观察角在 15° 到 25° 之间时。低于 15° 时，着陆点太靠近地平线，备用向量完全接管。
 
-The actual blending loop:
+实际混合循环：
 
 ```agc
             CAF     FOUR
@@ -1077,9 +1077,9 @@ UNWCLOOP    MASK    SIX
             TCF     UNWCLOOP
 ```
 
-This loops over the three components (Q = 4, 2, 0) of the window vector, blending the two candidate vectors by their respective coefficients.
+这循环遍历窗口向量的三个分量（Q = 4、2、0），用各自的系数混合两个候选向量。
 
-### Steering and Throttle
+### 转向和油门
 
 ```agc
 STEER?      CA      FLAGWRD2        # IF STEERSW DOWN NO OUTPUTS
@@ -1095,9 +1095,9 @@ EXOVFLOW    TC      ALARM           # SOUND THE ALARM NON-ABORTIVELY
             OCT     01410
 ```
 
-If the steering switch is off, or if overflow occurred anywhere in the guidance computations, no commands are issued. Alarm code 01410 signals a guidance overflow — this is non-abortive (the system continues on the next cycle rather than triggering an abort).
+如果转向开关关闭，或者制导计算任何地方发生溢出，则不发出命令。报警码 01410 表示制导溢出——这是非中止的（系统在下一个周期继续而不触发中止）。
 
-If all is well:
+如果一切正常：
 
 ```agc
 GDUMP1      TC      THROTTLE
@@ -1107,15 +1107,15 @@ GDUMP1      TC      THROTTLE
             EXIT
 ```
 
-`THROTTLE` commands the descent engine, and `FINDCDUW` computes the CDU (coupling display unit) commands to steer the LM to the desired attitude.
+`THROTTLE` 命令下降引擎，`FINDCDUW` 计算 CDU（耦合显示单元）命令以将登月舱转向期望姿态。
 
 ---
 
-## 15. The Root Finder (ROOTPSRS)
+## 15. 求根器（ROOTPSRS）
 
-Allan Klumpp's double-precision Newton's method root finder deserves special attention. It is a general-purpose subroutine that finds a root of an Nth-degree polynomial. The landing guidance uses it to solve the cubic time-to-go equation.
+Allan Klumpp 的双精度牛顿法求根器值得特别关注。它是一个通用子程序，用于找到 N 次多项式的一个根。着陆制导用它来求解三次剩余时间方程。
 
-### Setup
+### 设置
 
 ```agc
 ROOTPSRS    EXTEND
@@ -1126,9 +1126,9 @@ ROOTPSRS    EXTEND
             TS      DERPTR          # DERIVATIVE TABLE POINTER
 ```
 
-### Derivative Coefficient Table
+### 导数系数表
 
-Before iterating, ROOTPSRS pre-computes the derivative coefficients by multiplying each A(i) by i:
+在迭代之前，ROOTPSRS 通过将每个 A(i) 乘以 i 来预计算导数系数：
 
 ```agc
 DERCLOOP    TS      PWRCNT
@@ -1148,7 +1148,7 @@ DERCLOOP    TS      PWRCNT
             TCF     DERCLOOP
 ```
 
-### Newton Iteration
+### 牛顿迭代
 
 ```agc
 ROOTLOOP    EXTEND
@@ -1174,9 +1174,9 @@ ROOTLOOP    EXTEND
             DAS     ROOTPS          # CORRECTED ROOT
 ```
 
-Each iteration: evaluate the polynomial and its derivative at the current guess, compute the Newton step `dx = -f(x)/f'(x)`, and update the root.
+每次迭代：在当前猜测处评估多项式及其导数，计算牛顿步 `dx = -f(x)/f'(x)`，并更新根。
 
-### Convergence Check
+### 收敛检查
 
 ```agc
             CA      MODE
@@ -1191,9 +1191,9 @@ BADROOT     TC      RETROOT         # FAIL: RETURN TO CALLER + 1
             TCF     ROOTSTOR        # CONVERGED
 ```
 
-`MODE` is used as an iteration counter. `BIT4` (value 8) is tested — when MODE reaches 8, the mask produces a non-zero value and `CCS` branches to `BADROOT`. The convergence test checks whether `|DX| - DXCRIT ≤ 0` using the CCS four-way skip on both the high and low words.
+`MODE` 用作迭代计数器。测试 `BIT4`（值为 8）——当 MODE 达到 8 时，掩码产生非零值，`CCS` 分支到 `BADROOT`。收敛测试通过高字和低字的 CCS 四路跳过检查 `|DX| - DXCRIT ≤ 0`。
 
-The precautions documented in the comments are remarkable for 1960s software:
+注释中记录的预防措施对于 1960 年代的软件来说是非凡的：
 
 ```
 # PRECAUTION: ROOTPSRS MAKES NO CHECKS FOR OVERFLOW OR FOR IMPROPER 
@@ -1201,13 +1201,13 @@ The precautions documented in the comments are remarkable for 1960s software:
 # ITERATIONS.
 ```
 
-This is essentially a "here be dragons" warning — the routine trusts its caller to provide well-scaled inputs.
+这本质上是一个"此处有龙"警告——该例程信任其调用方提供良好缩放的输入。
 
 ---
 
-## 16. The FASTCHNG Subroutine
+## 16. FASTCHNG 子程序
 
-This tiny subroutine appears throughout the file and deserves explanation:
+这个微小的子程序在文件中随处可见，值得解释：
 
 ```agc
             EBANK=  PHSNAME2
@@ -1220,94 +1220,92 @@ FASTCHNG    CA      EBANK3
             TC      A
 ```
 
-This is a "specialized PHASCHNG routine" — a fast version of the phase change protection that avoids the overhead of the full PHASCHNG subroutine. It stores the current location as a restart point in PHSNAME3 (group 3's phase name). The trick is that `DXCH L` exchanges the A,L pair with the L register and the word after it — but since A was loaded with EBANK3 and the return address is in Q (implicitly, since TC was used to call FASTCHNG), this atomically records the restart point.
+这是一个"专用 PHASCHNG 例程"——避免完整 PHASCHNG 子程序开销的快速版本相位变更保护。它将当前位置作为重启点存储在 PHSNAME3（第 3 组的阶段名）中。诀窍是 `DXCH L` 将 A、L 对与 L 寄存器及其后一个字交换——由于 A 被加载了 EBANK3，返回地址在 Q 中（隐式，因为使用了 TC 调用 FASTCHNG），这原子地记录了重启点。
 
-The `TC A` at the end is the return — A contains the saved EBANK value, and `TC A` transfers control to the address in A. Wait — that's not right. Let me re-examine.
+末尾的 `TC A` 是返回——A 包含保存的 EBANK 值，`TC A` 将控制转移到 A 中的地址。
 
-Actually, looking more carefully: `CA EBANK3` loads A with the EBANK3 constant. `XCH EBANK` swaps A with the EBANK register — now A has the old EBANK value, EBANK is set to bank 3 (where PHSNAME3 lives). `DXCH L` is `DXCH 1` — it exchanges A,L with registers L and Q. So now the old EBANK is in L, and the return address (from Q) is saved. `TS PHSNAME3` stores the return address (which was in A after the DXCH rearrangement) as the restart phase. `LXCH EBANK` restores the original EBANK. `TC A` returns... but A now holds the value that was written to PHSNAME3.
-
-> **Uncertainty flag:** The exact register dance in FASTCHNG is tricky. The net effect is clear — it records the caller's address as a group 3 restart point — but the precise flow through the DXCH involving registers A, L, and Q requires careful cycle-by-cycle analysis that I may have the details wrong on. The key point is that this is a performance optimization: it does in ~7 instructions what the general `PHASCHNG` subroutine does in many more.
+> **不确定性标记：** FASTCHNG 中精确的寄存器舞蹈很棘手。净效果是清楚的——它将调用方的地址记录为第 3 组重启点——但 A、L 和 Q 寄存器参与的 DXCH 的精确流程需要仔细的逐周期分析，我可能有某些细节不对。关键点是这是一个性能优化：它用约 7 条指令完成了通用 `PHASCHNG` 子程序更多指令才能完成的事。
 
 ---
 
-## 17. Constants and Scaling
+## 17. 常量和缩放
 
 ```agc
 HIGHESTF    2DEC    4.34546769 B-12
 ```
 
-Maximum thrust force of the LM descent engine, scaled by 2^-12. In the AGC's fractional arithmetic, this represents the thrust in internal units (likely tens of thousands of pounds scaled to fit in the 0-1 range).
+登月舱下降引擎的最大推力，以 2^-12 缩放。在 AGC 的小数算术中，这以内部单位表示推力（可能是成千上万磅，缩放以适应 0-1 范围）。
 
 ```agc
 GSCALE      2DEC    100 B-11
 ```
 
-Gravity scaling factor. 100 × 2^-11 — used to convert the gravity vector to guidance units.
+重力缩放因子。100 × 2^-11——用于将重力向量转换为制导单位。
 
 ```agc
 3/8DP       2DEC    .375
 3/4DP       2DEC    .750
 ```
 
-Fractional constants used in the guidance equations. These avoid multiplication by integers (which would overflow the fractional representation) by expressing them as fractions.
+制导方程中使用的小数常量。这些避免了整数乘法（会使小数表示溢出），通过将其表达为小数。
 
 ```agc
 DEPRCRIT    2DEC    -.02 B-1
 ```
 
-Depression angle criterion for redesignation limiting — approximately -1.15 degrees (-.02 radians scaled by B-1 = 2^-1).
+重新瞄准限制的俯角判据——约 -1.15 度（-.02 弧度，以 B-1 = 2^-1 缩放）。
 
 ```agc
 PROJMAX     DEC     .42262 B-3      # SIN(25°)/8
 PROJMIN     DEC     .25882 B-3      # SIN(15°)/8
 ```
 
-Window vector blending thresholds. The B-3 scaling means these are actually sin(angle)/8, matching the 1/8 scaling used in the projection computation.
+窗口向量混合阈值。B-3 缩放意味着这些实际上是 sin(angle)/8，与投影计算中使用的 1/8 缩放相匹配。
 
 ```agc
 AZEACH      DEC     .03491          # 2 DEGREES
 ELEACH      DEC     .00873          # 1/2 DEGREE
 ```
 
-Redesignation increments per hand controller click. These are in radians (0.03491 rad ≈ 2°, 0.00873 rad ≈ 0.5°). The asymmetry is deliberate: azimuth (left-right) changes need larger increments because the landing site moves less per degree of azimuth change, while elevation (near-far) is more sensitive.
+每次手动控制器点击的重新瞄准增量。这些是弧度值（0.03491 弧度 ≈ 2°，0.00873 弧度 ≈ 0.5°）。不对称是刻意的：方位角（左右）变化需要更大的增量，因为每度方位角变化时着陆点移动较少，而仰角（近远）更敏感。
 
 ```agc
 BIASFACT    2DEC    655.36 B-28
 ```
 
-PIPA bias scaling factor. 655.36 × 2^-28 — converts PIPA bias values to the velocity units used in the ROD computation.
+PIPA 偏置缩放因子。655.36 × 2^-28——将 PIPA 偏置值转换为 ROD 计算中使用的速度单位。
 
 ---
 
-## 18. Historical Notes and Easter Eggs
+## 18. 历史注记和彩蛋
 
-### GUILDENSTERN (and ROSENSTERN, elsewhere)
+### GUILDENSTERN（以及其他地方的 ROSENSTERN）
 
-The Shakespeare/Stoppard reference is the most famous naming in the codebase. The routines that monitor automatic mode switching are named after characters who are buffeted by events beyond their control — an apt metaphor for mode-switching logic that must respond to whatever the astronaut does.
+莎士比亚/斯托帕德的引用是代码库中最著名的命名。监视自动模式切换的例程以那些被超出自己控制的事件所左右的人物命名——这是对必须响应宇航员任何操作的模式切换逻辑的恰当比喻。
 
-### "TEMPORARY, I HOPE HOPE HOPE"
+### "临时性，我希望希望希望"
 
 ```agc
             TC      BANKCALL        # TEMPORARY, I HOPE HOPE HOPE
             CADR    STOPRATE        # TEMPORARY, I HOPE HOPE HOPE
 ```
 
-This call to `STOPRATE` at the start of vertical descent initialization was meant to be temporary — a quick fix to zero the attitude rates when entering P65/P66/P67. The programmer's triple "HOPE" expresses the universal programmer's lament: nothing is more permanent than a temporary fix. It flew on Apollo 11 exactly as written.
+在垂直下降初始化开始时对 `STOPRATE` 的调用本意是临时的——一个将姿态角速率清零以进入 P65/P66/P67 的快速修复。程序员三重"HOPE"表达了普世程序员的哀叹：没有什么比临时修复更持久的了。它就这样在阿波罗 11 号上飞行。
 
-### ELVIRA and ZERLINA
+### ELVIRA 和 ZERLINA
 
-The redesignation monitor uses opera character names for its state variables — `ELVIRA` holds the current controller state, `ZERLINA` is a debounce timeout counter. Both characters are from Mozart's *Don Giovanni*. This naming convention was common in MIT Instrumentation Lab code — variable names were chosen to be memorable and distinctive rather than descriptive.
+重新瞄准监视器使用歌剧角色名称作为其状态变量——`ELVIRA` 保存当前控制器状态，`ZERLINA` 是去抖超时计数器。两个角色都来自莫扎特的《唐·乔瓦尼》。这种命名约定在 MIT 仪器实验室代码中很常见——变量名被选为令人难忘且有特色的，而非描述性的。
 
-### "NUMERO MYSTERIOSO"
+### "神秘数字"
 
 ```agc
             DMP*    VXSC
                     GAINBRAK,1      # NUMERO MYSTERIOSO
 ```
 
-The programmer who wrote this comment didn't fully understand where the gain constant came from — it was derived from trajectory analysis and simply provided as a magic number. The candor is refreshing: rather than pretending to understand it, they flagged it honestly.
+写这条注释的程序员不完全理解这个增益常量的来源——它来自轨迹分析，只是作为一个魔法数字提供。这种坦诚令人耳目一新：他们没有假装理解它，而是诚实地标记了出来。
 
-### Alarm Code 01406
+### 报警码 01406
 
 ```agc
 1406P00     TC      POODOO
@@ -1317,103 +1315,103 @@ The programmer who wrote this comment didn't fully understand where the gain con
             TCF     RATESTOP
 ```
 
-Alarm 1406 indicates that the TTF/8 root finder failed to converge. During the ignition algorithm (IGNALG), this is fatal — `POODOO` triggers a program alarm and goes to P00 (idle). During braking or approach, it's non-fatal — the alarm is sounded but guidance continues with rate-damping (`RATESTOP`).
+报警 1406 表示 TTF/8 求根器未能收敛。在点火算法（IGNALG）期间，这是致命的——`POODOO` 触发程序报警并转到 P00（空闲）。在制动或进近期间，它是非致命的——报警被触发，但制导以速率阻尼（`RATESTOP`）继续。
 
-The name `POODOO` for the fatal error handler is another example of MIT IL's colorful naming. It's used throughout the codebase for unrecoverable errors.
+致命错误处理程序的名字 `POODOO` 是 MIT IL 丰富命名的另一个例子。它在整个代码库中用于不可恢复的错误。
 
 ---
 
-## 19. Control Flow Summary
+## 19. 控制流摘要
 
 ```
-LUNLAND (from SERVOUT, ~2 Hz)
+LUNLAND（来自 SERVOUT，约 2 Hz）
   │
-  ├── GUILDENSTERN: Check astronaut mode switches
-  │     ├── Manual throttle? → P67
-  │     ├── Attitude hold + was P67? → P66
-  │     ├── Attitude hold + ROD clicked? → P66
-  │     └── Continue current program
+  ├── GUILDENSTERN：检查宇航员模式开关
+  │     ├── 手动油门？→ P67
+  │     ├── 姿态保持 + 曾是 P67？→ P66
+  │     ├── 姿态保持 + ROD 点击？→ P66
+  │     └── 继续当前程序
   │
-  ├── GUILDRET: Initialize pass
-  │     ├── Save TPIP timestamps
-  │     ├── Copy TTF/8 to working copy
-  │     └── Check FLPASS0
+  ├── GUILDRET：初始化过程
+  │     ├── 保存 TPIP 时间戳
+  │     ├── 将 TTF/8 复制到工作副本
+  │     └── 检查 FLPASS0
   │
-  ├── NEWPHASE[WCHPHASE]: Start new phase if needed
+  ├── NEWPHASE[WCHPHASE]：如需则开始新阶段
   │     ├── IGNALG/BRAKQUAD → TTFINCR
   │     ├── APPRQUAD → STARTP64
   │     └── VERTICAL → P65START
   │
-  ├── TTFINCR: Update time-to-go and landing site
+  ├── TTFINCR：更新剩余时间和着陆点
   │
-  ├── PREGUIDE[WCHPHASE]: Pre-guidance
-  │     ├── IGNALG → CALCRGVG (compute V from integration)
+  ├── PREGUIDE[WCHPHASE]：制导前
+  │     ├── IGNALG → CALCRGVG（从积分计算 V）
   │     ├── BRAKQUAD/VERTICAL → RGVGCALC
   │     └── APPRQUAD → REDESIG → RGVGCALC
   │
-  ├── WHATGUID[WCHPHASE]: Guidance equations
+  ├── WHATGUID[WCHPHASE]：制导方程
   │     ├── IGNALG/BRAKQUAD/APPRQUAD → TTF/8CL → QUADGUID
   │     └── VERTICAL → VERTGUID
-  │           ├── P65VERT (linear velocity tracking)
-  │           ├── P66VERT → RODCOMP (rate of descent)
-  │           └── P67VERT (display only)
+  │           ├── P65VERT（线性速度跟踪）
+  │           ├── P66VERT → RODCOMP（下降率）
+  │           └── P67VERT（仅显示）
   │
-  ├── AFTRGUID[WCHPHASE]: Post-guidance
+  ├── AFTRGUID[WCHPHASE]：制导后
   │     ├── IGNALG/BRAKQUAD/APPRQUAD → CGCALC → EXTLOGIC
   │     └── VERTICAL → STEER?
   │
-  ├── WHATEXIT[WCHPHASE]: Exit/window vector
-  │     ├── EXGSUB (ignition algorithm return)
-  │     ├── EXBRAK (window = UNIT(R))
-  │     └── EXNORM (window = blend toward LAND)
+  ├── WHATEXIT[WCHPHASE]：退出/窗口向量
+  │     ├── EXGSUB（点火算法返回）
+  │     ├── EXBRAK（窗口 = UNIT(R)）
+  │     └── EXNORM（窗口 = 混合朝向 LAND）
   │
   ├── STEER? → THROTTLE → FINDCDUW
   │
-  └── WHATDISP[WCHPHASE]: Display
+  └── WHATDISP[WCHPHASE]：显示
         ├── P63DISPS → V06N63
-        ├── P64DISPS → V06N64 (flashing until PROCEED)
+        ├── P64DISPS → V06N64（闪烁直到按 PROCEED）
         └── VERTDISP → V06N60
 ```
 
 ---
 
-## 20. What This Code Actually Did on July 20, 1969
+## 20. 1969 年 7 月 20 日这段代码实际做了什么
 
-At 20:05 UTC, the LM *Eagle* began powered descent. P63 (braking) fired the descent engine to slow from orbital velocity. The quadratic guidance law in `QUADGUID` computed thrust commands every ~2 seconds, while `TTFINCR` tracked time-to-go and compensated for lunar rotation.
+UTC 时间 20:05，登月舱*鹰号*开始动力下降。P63（制动）点燃下降引擎以从轨道速度减速。`QUADGUID` 中的二次制导律每约 2 秒计算一次推力命令，而 `TTFINCR` 跟踪剩余时间并补偿月球自转。
 
-At approximately 7,000 feet, P64 (approach) took over. Neil Armstrong saw through the LPD window that the computer was targeting a boulder field at the edge of West Crater. He used the redesignation hand controller — processed by `PITFALL` and `REDESMON`, accumulated in `ELINCR1`/`AZINCR1`, and applied in `REDESIG` — to move the landing point. The DSKY displayed the LPD angle (`LOOKANGL`) via Noun 64.
+在大约 7,000 英尺高度，P64（进近）接管。Neil Armstrong 通过 LPD 窗口看到计算机正在瞄准西克陨石坑边缘的一片巨石区。他使用重新瞄准手动控制器——由 `PITFALL` 和 `REDESMON` 处理，累积在 `ELINCR1`/`AZINCR1` 中，并在 `REDESIG` 中应用——移动了着陆点。DSKY 通过 Noun 64 显示 LPD 角度（`LOOKANGL`）。
 
-At approximately 500 feet, P66 (rate of descent) engaged. Armstrong used the ROD switch — processed by `DESCBITS`, accumulated in `RODCOUNT`, applied in `RODCOMP` — to control descent rate while the computer maintained attitude. `VDGVERT` tracked his desired rate; `TAUROD` governed how aggressively the computer achieved it.
+在大约 500 英尺高度，P66（下降率）接合。Armstrong 使用 ROD 开关——由 `DESCBITS` 处理，累积在 `RODCOUNT` 中，在 `RODCOMP` 中应用——控制下降率，而计算机保持姿态。`VDGVERT` 跟踪他的期望速率；`TAUROD` 控制计算机达到该速率的积极程度。
 
-The "1202" and "1201" program alarms that occurred during the descent were NOT in this file — they came from the Executive's job-overflow detection. But the guidance in this file kept running through those alarms, because the restart protection (`PHASCHNG`, `FASTCHNG`) ensured that each guidance cycle could be restarted from a known state.
+下降过程中发生的"1202"和"1201"程序报警不在此文件中——它们来自执行模块的作业溢出检测。但此文件中的制导在这些报警中持续运行，因为重启保护（`PHASCHNG`、`FASTCHNG`）确保每个制导周期都能从已知状态重启。
 
-At 20:17 UTC, with about 25 seconds of fuel remaining, Armstrong heard "Contact light" as a 67-inch probe dangling from a landing leg touched the surface. He hit the ENGINE STOP button. The code in this file had done its job.
+UTC 时间 20:17，在大约还有 25 秒燃料时，Armstrong 听到"接触灯"，悬挂在着陆腿上的 67 英寸探针触碰了地面。他按下了发动机停止按钮。此文件中的代码完成了它的使命。
 
 ---
 
-## Appendix: Glossary of Key Variables
+## 附录：关键变量词汇表
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `WCHPHASE` | SP | Phase selector: -1=IGNALG, 0=BRAK, 1=APPR, 2=VERT |
-| `WCHVERT` | SP | Vertical mode: <0=P65, 0=P66, >0=P67 |
-| `TTF/8` | DP | Time-to-go / 8 (centiseconds, scaled) |
-| `LAND` | Vector (3×DP) | Landing site position vector (inertial, lunar-fixed) |
-| `/LAND/` | DP | Magnitude of LAND vector |
-| `R` | Vector | Current LM position |
-| `V` | Vector | Current LM velocity |
-| `RGU` | Vector | Position in guidance coordinates |
-| `VGU` | Vector | Velocity in guidance coordinates |
-| `CG` | Matrix (3×3) | Guidance-to-stable-member transformation |
-| `ANGTERM` | Vector | V + R × WM (velocity relative to surface) |
-| `UNFC/2` | Vector | Commanded force / 2 (half the thrust command) |
-| `/AFC/` | DP | Magnitude of commanded acceleration (for throttle) |
-| `UNWC/2` | Vector | Window pointing vector / 2 |
-| `VDGVERT` | DP | Desired vertical velocity (P66 ROD target) |
-| `HDOTDISP` | DP | Current altitude rate (for display) |
-| `RODCOUNT` | SP | Accumulated ROD switch clicks |
-| `ELINCR1` | DP | Accumulated elevation redesignation increment |
-| `AZINCR1` | DP | Accumulated azimuth redesignation increment |
-| `FLPASS0` | SP | Pass counter within current phase |
-| `WM` | Vector | Lunar angular velocity |
-| `REFSMMAT` | Matrix | Reference-to-stable-member matrix |
+| 变量 | 类型 | 描述 |
+|------|------|------|
+| `WCHPHASE` | SP | 阶段选择器：-1=IGNALG，0=制动，1=进近，2=垂直 |
+| `WCHVERT` | SP | 垂直模式：<0=P65，0=P66，>0=P67 |
+| `TTF/8` | DP | 剩余时间/8（厘秒，缩放） |
+| `LAND` | 向量（3×DP） | 着陆点位置向量（惯性，月球固定） |
+| `/LAND/` | DP | LAND 向量的量级 |
+| `R` | 向量 | 当前登月舱位置 |
+| `V` | 向量 | 当前登月舱速度 |
+| `RGU` | 向量 | 制导坐标系中的位置 |
+| `VGU` | 向量 | 制导坐标系中的速度 |
+| `CG` | 矩阵（3×3） | 制导到稳定构件的变换 |
+| `ANGTERM` | 向量 | V + R × WM（相对表面速度） |
+| `UNFC/2` | 向量 | 指令力/2（推力命令的一半） |
+| `/AFC/` | DP | 指令加速度的量级（用于油门） |
+| `UNWC/2` | 向量 | 窗口指向向量/2 |
+| `VDGVERT` | DP | 期望垂直速度（P66 ROD 目标） |
+| `HDOTDISP` | DP | 当前高度率（用于显示） |
+| `RODCOUNT` | SP | 累积的 ROD 开关点击数 |
+| `ELINCR1` | DP | 累积的仰角重新瞄准增量 |
+| `AZINCR1` | DP | 累积的方位角重新瞄准增量 |
+| `FLPASS0` | SP | 当前阶段内的过程计数器 |
+| `WM` | 向量 | 月球角速度 |
+| `REFSMMAT` | 矩阵 | 参考到稳定构件矩阵 |
