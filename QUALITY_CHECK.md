@@ -1,179 +1,179 @@
-# Quality Check Report
+# 质量检查报告
 
-_Cross-file consistency review and fact-check of all walkthrough files before publication._
+_发布前对所有导读文件进行跨文件一致性审查和事实核查。_
 
 ---
 
-## 1. Cross-File Number Consistency
+## 1. 跨文件数字一致性
 
-### Core Sets / Job Slots
+### 核心集 / 作业槽
 
-| File | Claim | Status |
+| 文件 | 说明 | 状态 |
 |------|-------|--------|
-| 01-executive.md | "NO.CORES DEC 7" → 8 total (7 + core set 0) | ⚠️ **CHECK** |
-| 01-executive.md title | "600 lines" | File says ~503 lines for EXECUTIVE.agc in repo map |
-| 02-waitlist.md | "7 core sets" / "Max concurrent: 7 jobs" | ⚠️ **CONFLICTS with 01** |
-| 08-lessons.md | "Seven core sets serve as process control blocks" | ⚠️ **CONFLICTS** |
-| 08-lessons.md (later) | "7 core sets, 5 VAC areas, 9 Waitlist slots" | Uses 7 |
+| 01-executive.md | "NO.CORES DEC 7" → 共 8 个（7 + 核心集 0） | ⚠️ **待核查** |
+| 01-executive.md 标题 | "600 行" | 文件显示 EXECUTIVE.agc 在仓库映射中约有 503 行 |
+| 02-waitlist.md | "7 个核心集" / "最大并发：7 个作业" | ⚠️ **与 01 冲突** |
+| 08-lessons.md | "七个核心集充当进程控制块" | ⚠️ **冲突** |
+| 08-lessons.md（后文） | "7 个核心集，5 个 VAC 区域，9 个等待列表槽" | 使用 7 |
 
-**Issue:** 01-executive says `DEC 7` means 8 total (loop counter for CCS), but 02-waitlist and 08-lessons say 7. Need to verify against actual source. `DEC 7` as a CCS loop counter iterates 0→7 = 8 iterations. But `NO.CORES` might be the count itself (7 core sets for auxiliary jobs + core set 0 for the running job = 7 schedulable slots). The 01-executive interpretation of "8 total" may be the accurate one if core set 0 is the running job's context.
+**问题：** 01-executive 称 `DEC 7` 意味着共 8 个（CCS 的循环计数器），但 02-waitlist 和 08-lessons 称 7。需要对照实际源代码验证。`DEC 7` 作为 CCS 循环计数器执行 0→7 = 8 次迭代。但 `NO.CORES` 可能本身就是计数（7 个核心集用于辅助作业 + 核心集 0 用于运行中的作业 = 7 个可调度槽）。如果核心集 0 是运行中作业的上下文，则 01-executive 对"共 8 个"的解释可能更准确。
 
-**Verdict:** Both interpretations appear in the codebase literature. The safest statement is "7 available core sets for pending jobs, plus the active job's registers" — which is effectively 7 job slots. The 08-lessons figure of "7 core sets" is correct for the number of *schedulable* slots.
+**结论：** 两种解释均见于代码库文献。最安全的表述是"7 个可用核心集用于等待中的作业，加上活跃作业的寄存器"——实际上是 7 个作业槽。08-lessons 中"7 个核心集"的数字对于*可调度*槽数量来说是正确的。
 
-### VAC Areas
+### VAC 区域
 
-| File | Claim |
+| 文件 | 说明 |
 |------|-------|
-| 01-executive.md | "5 VAC areas" |
-| 08-lessons.md | "5 VAC areas" |
+| 01-executive.md | "5 个 VAC 区域" |
+| 08-lessons.md | "5 个 VAC 区域" |
 
-**Consistent.** ✅
+**一致。** ✅
 
-### Waitlist Slots
+### 等待列表槽
 
-| File | Claim |
+| 文件 | 说明 |
 |------|-------|
-| 01-executive.md | "9 waitlist tasks" |
-| 02-waitlist.md | "9 concurrent pending tasks" / "8 LST1 entries + sentinel" |
-| 08-lessons.md | "9 Waitlist slots" |
+| 01-executive.md | "9 个等待列表任务" |
+| 02-waitlist.md | "9 个并发待处理任务" / "8 个 LST1 条目 + 哨兵" |
+| 08-lessons.md | "9 个等待列表槽" |
 
-**Consistent.** ✅
+**一致。** ✅
 
-### Interpreter Speed
+### 解释器速度
 
-| File | Claim |
+| 文件 | 说明 |
 |------|-------|
-| 06-interpreter.md | "10-25x slower than native" |
-| 06-interpreter.md | "DMPSUB: 49 MCT = 0.573 ms" |
-| 08-lessons.md | "10-25x slower" |
+| 06-interpreter.md | "比原生代码慢 10-25 倍" |
+| 06-interpreter.md | "DMPSUB：49 MCT = 0.573 ms" |
+| 08-lessons.md | "慢 10-25 倍" |
 
-**Consistent.** ✅
+**一致。** ✅
 
-### ROM Size / Word Count
+### ROM 大小 / 字数
 
-| File | Claim |
+| 文件 | 说明 |
 |------|-------|
-| 06-interpreter.md | "36,864 words of ROM" / "~1,000 words for interpreter" |
-| 08-lessons.md | "36,864 words" / "36K words" |
-| Phase 1 context | "36,864 words (~69 KB)" |
+| 06-interpreter.md | "36,864 字的 ROM" / "解释器约 1,000 字" |
+| 08-lessons.md | "36,864 字" / "36K 字" |
+| 第 1 阶段上下文 | "36,864 字（约 69 KB）" |
 
-**Consistent.** ✅
+**一致。** ✅
 
-### RAM Size
+### RAM 大小
 
-| File | Claim |
+| 文件 | 说明 |
 |------|-------|
-| All files | "2,048 words" / "2K of RAM" |
+| 所有文件 | "2,048 字" / "2K RAM" |
 
-**Consistent.** ✅
+**一致。** ✅
 
 ---
 
-## 2. Factual Claims Requiring External Verification
+## 2. 需要外部核实的事实声明
 
-### Claims about the July 20, 1969 landing
+### 关于 1969 年 7 月 20 日着陆的声明
 
-| Claim | File | Verify Against |
+| 声明 | 文件 | 对照核实 |
 |-------|------|----------------|
-| "25 seconds of fuel remaining" | 01-executive, 04-landing-guidance | Multiple sources say ~25 seconds. Accurate. ✅ |
-| Assembly date "July 14, 1969 — six days before landing" | 04-landing-guidance | Luminary099 header says "16:27 JUL. 14, 1969". Landing was July 20. Six days. ✅ |
-| "Rendezvous radar left on" causing 1202 | 03-restart, 08-lessons | Well-documented historical fact. ✅ |
-| "West Crater" as the boulder field Armstrong avoided | 04-landing-guidance | Confirmed by multiple Apollo 11 sources. ✅ |
+| "剩余 25 秒燃料" | 01-executive, 04-landing-guidance | 多个来源显示约 25 秒。准确。✅ |
+| 组装日期"1969 年 7 月 14 日——着陆前六天" | 04-landing-guidance | Luminary099 头文件显示"16:27 JUL. 14, 1969"。着陆于 7 月 20 日。相差六天。✅ |
+| "交会雷达保持开启"导致 1202 | 03-restart, 08-lessons | 有详细记录的历史事实。✅ |
+| "西陨石坑"是 Armstrong 绕过的陨石坑区域 | 04-landing-guidance | 多个 Apollo 11 来源确认。✅ |
 
-### Claims about historical priority / first-ness
+### 关于历史优先权的声明
 
-| Claim | File | Status |
+| 声明 | 文件 | 状态 |
 |-------|------|--------|
-| "One of the earliest deployed bytecode interpreters" | 06-interpreter, 08-lessons | ⚠️ **SAFE** — qualified with "one of the earliest" |
-| "Predates UCSD p-code (1978) by over a decade" | 06-interpreter | ✅ Accurate |
-| "Predates Java JVM (1995) by nearly 30 years" | 06-interpreter | ✅ Accurate |
-| "The world's first Verb-Noun command-line interface" | 07-dsky-interface | ⚠️ **STRONG CLAIM** — defensible given the date but hard to prove "first". Suggest "one of the earliest" |
-| "Predates Unix shells by several years" | 07-dsky-interface, 08-lessons | ✅ Thompson shell was 1971, DSKY flew 1966 |
-| Crash-only design "Candea and Fox formalised at Stanford in 2003" | 08-lessons | ✅ Correct paper/date |
-| "Erlang's 'let it crash' philosophy (1986)" | 08-lessons | ✅ Erlang first appeared 1986 |
-| Hamilton "credited with coining 'software engineering'" | 08-lessons | ✅ Widely attributed. Accurate. |
+| "最早部署的字节码解释器之一" | 06-interpreter, 08-lessons | ⚠️ **安全** — 限定为"最早之一" |
+| "比 UCSD p-code（1978 年）早十年以上" | 06-interpreter | ✅ 准确 |
+| "比 Java JVM（1995 年）早近 30 年" | 06-interpreter | ✅ 准确 |
+| "世界上第一个动词-名词命令行界面" | 07-dsky-interface | ⚠️ **强烈声明** — 鉴于 1966 年的日期可以辩护，但难以证明"第一"。建议改为"最早之一" |
+| "比 Unix shell 早几年" | 07-dsky-interface, 08-lessons | ✅ Thompson shell 是 1971 年，DSKY 飞行于 1966 年 |
+| 只崩溃设计"由 Candea 和 Fox 于 2003 年在斯坦福正式化" | 08-lessons | ✅ 论文/日期正确 |
+| "Erlang 的'让它崩溃'哲学（1986 年）" | 08-lessons | ✅ Erlang 首次出现于 1986 年 |
+| Hamilton "被认为创造了'软件工程'一词" | 08-lessons | ✅ 被广泛认可。准确。 |
 
-### Technical claims to spot-check against the AGC manual
+### 需要对照 AGC 手册进行抽查的技术声明
 
-| Claim | File | Status |
+| 声明 | 文件 | 状态 |
 |-------|------|--------|
-| "CCS does 4-way skip: >0/+0/<0/-0" | Multiple | ✅ Confirmed in manual |
-| "TS skip-on-overflow: skips next instruction" | Multiple | ✅ Confirmed in manual |
-| "EDOP shifts right 7 positions, zeros upper 8" | 06-interpreter | ✅ Confirmed in manual |
-| "I/O channel 14 controls DPS throttle" | 05-burn-baby-burn | ⚠️ **VERIFY** — Channel 14 is described in the manual as controlling IMU CDU drive, gyro activity, etc. Throttle control may be via channel 14 bit assignments specific to LM. Need to check LM I/O channel map specifically |
-| "TIME3 overflow triggers T3RUPT" | 02-waitlist | ✅ Confirmed in manual |
-| "TIME4 overflow triggers T4RUPT" | Multiple | ✅ Confirmed in manual |
-| "Machine cycle = 11.72 µs" | Multiple | ✅ Confirmed in manual |
+| "CCS 做 4 路跳转：>0/+0/<0/-0" | 多处 | ✅ 手册已确认 |
+| "TS 溢出跳转：跳过下一条指令" | 多处 | ✅ 手册已确认 |
+| "EDOP 右移 7 位，高 8 位清零" | 06-interpreter | ✅ 手册已确认 |
+| "I/O 通道 14 控制 DPS 油门" | 05-burn-baby-burn | ⚠️ **待核实** — 手册中通道 14 描述为控制 IMU CDU 驱动、陀螺活动等。油门控制可能通过通道 14 特定于 LM 的位分配实现。需要专门查看 LM I/O 通道映射 |
+| "TIME3 溢出触发 T3RUPT" | 02-waitlist | ✅ 手册已确认 |
+| "TIME4 溢出触发 T4RUPT" | 多处 | ✅ 手册已确认 |
+| "机器周期 = 11.72 µs" | 多处 | ✅ 手册已确认 |
 
 ---
 
-## 3. Internal Contradictions
+## 3. 内部矛盾
 
-### Executive file title vs line count
-- 01-executive.md says "600 lines" in the title
-- 00-repo-structure.md says EXECUTIVE.agc is 503 lines
-- The "600 lines" likely includes WAITLIST.agc too (503 + ~560 ≈ 1,063) — or may refer to just the scheduling code within the file
-- **Recommendation:** Change title to "~500 lines" or clarify it covers both files
+### 执行程序文件标题与行数
+- 01-executive.md 标题中写"600 行"
+- 00-repo-structure.md 显示 EXECUTIVE.agc 有 503 行
+- "600 行"可能包括了 WAITLIST.agc（503 + ~560 ≈ 1,063）——或可能指文件中仅调度代码的部分
+- **建议：** 将标题改为"约 500 行"或说明它涵盖两个文件
 
-### Core set count (7 vs 8)
-- See Section 1 above. 01-executive says 8, other files say 7
-- **Recommendation:** Standardize on "7 core sets for pending/sleeping jobs" since that's the schedulable capacity. Note that core set 0 is the running job.
+### 核心集数量（7 vs 8）
+- 参见上文第 1 节。01-executive 说 8，其他文件说 7
+- **建议：** 统一为"7 个核心集用于待处理/休眠作业"，因为那是可调度容量。注明核心集 0 是运行中的作业。
 
-### 01-executive vs 02-waitlist overlap
-- 01-executive.md (from the original combined run) has a "Part 2: The Waitlist" section
-- 02-waitlist.md is a standalone analysis
-- **Recommendation:** Either trim Part 2 from 01-executive.md or add a cross-reference note. Currently there's duplicate coverage.
-
----
-
-## 4. Stylistic Issues
-
-### Consistent Headers
-- Most files use "# Title" then "## Section"
-- 04-landing-guidance uses numbered sections (## 1., ## 2., etc.)
-- 05-burn-baby-burn uses numbered sections
-- Not a blocker but slightly inconsistent
-
-### "I" vs impersonal voice
-- 08-lessons.md uses "What strikes me most..." in the Coda
-- Other files are impersonal
-- **Recommendation:** Keep the "me" in the synthesis — it's Julien's editorial voice and appropriate for Substack
-
-### Code block language tags
-- Some files use ```agc, others use plain ```
-- **Recommendation:** Standardize on ```agc for syntax highlighting (even if GitHub doesn't recognize it, it signals intent)
+### 01-executive 与 02-waitlist 的重叠
+- 01-executive.md（来自原始合并运行）有一个"第 2 部分：等待列表"章节
+- 02-waitlist.md 是独立分析
+- **建议：** 从 01-executive.md 中删减第 2 部分或添加交叉引用说明。目前存在重复覆盖。
 
 ---
 
-## 5. Missing Content
+## 4. 风格问题
 
-### 07-dsky-interface reference in README
-- README table lists 07-dsky-interface.md correctly ✅
+### 一致的标题
+- 大多数文件使用"# 标题"然后"## 章节"
+- 04-landing-guidance 使用编号章节（## 1., ## 2. 等）
+- 05-burn-baby-burn 使用编号章节
+- 不是阻塞性问题，但略有不一致
+
+### "我"与非人称语态
+- 08-lessons.md 在结语中使用"最让我印象深刻的是……"
+- 其他文件使用非人称语态
+- **建议：** 保留综合章节中的"我"——这是 Julien 的编辑视角，适合 Substack
+
+### 代码块语言标签
+- 部分文件使用 \`\`\`agc，其他使用普通 \`\`\`
+- **建议：** 统一使用 \`\`\`agc 进行语法高亮（即使 GitHub 不识别，也能表达意图）
+
+---
+
+## 5. 缺失内容
+
+### README 中对 07-dsky-interface 的引用
+- README 表格正确列出了 07-dsky-interface.md ✅
 
 ### PROCESS.md
-- Still has placeholder sections for Phase 3 corrections, Phase 4, Phase 5
-- **Recommendation:** Fill in run log data before publishing. The "what the AI got wrong" section is the credibility anchor for the blog post.
+- 仍有第 3 阶段更正、第 4 阶段、第 5 阶段的占位符章节
+- **建议：** 发布前填入运行日志数据。"AI 哪里出错"章节是博客文章可信度的锚点。
 
 ---
 
-## 6. Strongest Candidates for Blog Excerpts
+## 6. 最适合作为博客摘录的内容
 
-1. **The 1202 alarm trace** (03-restart) — most dramatic, best-known story
-2. **The vtable pattern in BURN_BABY_BURN** (05-burn-baby-burn) — "C++ virtual dispatch in 1966 assembly"
-3. **DSPTAB dirty flags = virtual DOM** (07-dsky-interface, 08-lessons) — provocative comparison
-4. **"TEMPORARY, I HOPE HOPE HOPE"** (04-landing-guidance, 08-lessons) — human moment
-5. **Interpreter ROM savings estimate** (06-interpreter) — "15,000-40,000 words saved"
+1. **1202 警报追踪**（03-restart）——最具戏剧性，最广为人知的故事
+2. **BURN_BABY_BURN 中的虚表模式**（05-burn-baby-burn）——"1966 年汇编中的 C++ 虚函数分派"
+3. **DSPTAB 脏标记 = 虚拟 DOM**（07-dsky-interface, 08-lessons）——引人深思的比较
+4. **"TEMPORARY, I HOPE HOPE HOPE"**（04-landing-guidance, 08-lessons）——人文时刻
+5. **解释器节省 ROM 的估算**（06-interpreter）——"节省了 15,000-40,000 字"
 
 ---
 
-## 7. Recommended Fixes Before Publishing
+## 7. 发布前建议修复项
 
-| Priority | Fix | File |
+| 优先级 | 修复内容 | 文件 |
 |----------|-----|------|
-| **High** | Standardize core set count (7 schedulable + running job) | 01-executive, 08-lessons |
-| **High** | Remove or cross-reference Part 2 (Waitlist) from 01-executive | 01-executive |
-| **High** | Fill in PROCESS.md run data | PROCESS.md |
-| **Medium** | Verify I/O channel 14 throttle claim | 05-burn-baby-burn |
-| **Medium** | Soften "world's first" to "one of the earliest" for Verb-Noun | 07-dsky-interface |
-| **Low** | Standardize ```agc code blocks | All files |
-| **Low** | Fix "600 lines" in 01-executive title | 01-executive |
+| **高** | 统一核心集数量（7 个可调度 + 运行中的作业） | 01-executive, 08-lessons |
+| **高** | 从 01-executive 中删除或交叉引用第 2 部分（等待列表） | 01-executive |
+| **高** | 填写 PROCESS.md 运行数据 | PROCESS.md |
+| **中** | 核实 I/O 通道 14 油门声明 | 05-burn-baby-burn |
+| **中** | 将动词-名词"世界第一"软化为"最早之一" | 07-dsky-interface |
+| **低** | 统一 \`\`\`agc 代码块 | 所有文件 |
+| **低** | 修复 01-executive 标题中的"600 行" | 01-executive |

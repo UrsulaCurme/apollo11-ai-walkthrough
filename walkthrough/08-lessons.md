@@ -1,273 +1,273 @@
-# Lessons for 2026: What the Apollo Guidance Computer Still Teaches Us
+# 2026 年的启示：阿波罗制导计算机至今的教益
 
-## A Synthesis of Seven Walkthroughs — and Why 1960s Flight Software Remains Relevant
+## 七个导读的综合——以及 1960 年代飞行软件为何至今仍具现实意义
 
-The Apollo Guidance Computer was obsolete before it flew. By 1969, the PDP-10 had 36-bit words, 256K of magnetic core, and ran timesharing for dozens of users. The AGC had 15-bit words, 2K of RAM, and ran one mission. It was, by every quantitative measure, a toy.
+阿波罗制导计算机在飞行之前就已经过时了。到 1969 年，PDP-10 已拥有 36 位字、256K 磁芯内存，并为数十名用户运行分时系统。AGC 只有 15 位字、2K RAM，只运行一个任务。从每一个量化指标来看，它都是一个玩具。
 
-And yet the software that ran on it — written by hand in assembly, woven into core rope memory months before launch, impossible to patch in flight — implemented architectural patterns that the rest of the industry wouldn't rediscover for decades. Cooperative multitasking. Bytecode interpretation. Priority-based graceful degradation. Checkpoint/restart. Double-buffered display systems with dirty flags. Table-driven polymorphic dispatch. A structured command language for human-computer interaction.
+然而，运行其上的软件——手工用汇编语言编写，在发射前数月被编织进绳芯存储器，在飞行中无法打补丁——实现了业界几十年后才会重新发现的架构模式。协作式多任务。字节码解释。基于优先级的优雅降级。检查点/重启。带脏标记的双缓冲显示系统。表驱动的多态分派。用于人机交互的结构化命令语言。
 
-This chapter draws on seven deep walkthroughs of the Luminary099 codebase — the Lunar Module's flight software for Apollo 11 — and argues that the AGC's design remains not just historically interesting but *practically instructive* for engineers building systems in 2026.
+本章基于对 Luminary099 代码库——Apollo 11 登月舱飞行软件——七次深度导读，论证 AGC 的设计不仅具有历史意义，对 2026 年构建系统的工程师来说*实际上仍有指导价值*。
 
 ---
 
-## 1. Architectural Patterns Ahead of Their Time
+## 1. 领先于时代的架构模式
 
-### 1.1 Cooperative Multitasking: Green Threads Before Green Threads
+### 1.1 协作式多任务：绿色线程之前的绿色线程
 
-The Executive module implements cooperative multitasking in roughly 600 lines of assembly. Seven core sets serve as process control blocks. Jobs yield voluntarily via `CHANG1` (basic) or `CHANG2` (interpretive). The `NEWJOB` variable always points to the highest-priority waiting job. There is no preemption — no timer interrupt forces a context switch. Every job is trusted to yield regularly.
+执行程序模块在约 600 行汇编代码中实现了协作式多任务。七个核心集充当进程控制块。作业通过 `CHANG1`（基本模式）或 `CHANG2`（解释模式）自愿让出控制权。`NEWJOB` 变量始终指向优先级最高的等待作业。没有抢占——没有定时器中断强制进行上下文切换。每个作业都被信任会定期让出控制权。
 
-This is, structurally, identical to how Go's goroutine scheduler worked before Go 1.14 introduced asynchronous preemption in 2020. It is how Python's `asyncio` works today. It is how every cooperative green-thread system works: the runtime maintains a set of lightweight tasks, each with saved state, and a scheduler that picks the highest-priority ready task when the current one yields.
+从结构上看，这与 Go 在 2020 年 Go 1.14 引入异步抢占之前的 goroutine 调度器工作方式完全相同。这也是 Python `asyncio` 今天的工作方式。这是每个协作式绿色线程系统的工作方式：运行时维护一组轻量级任务，每个任务都有保存的状态，以及一个当当前任务让出时选择优先级最高的就绪任务的调度器。
 
-The differences are instructive. The AGC's "core sets" are fixed-size, fixed-count (7), and statically allocated. A goroutine's state is heap-allocated and growable. The AGC cannot recover from a job that fails to yield — the system hangs. Modern cooperative systems add safety valves: Go inserts preemption points at function prologues; Tokio's `yield_now()` is voluntary but culturally enforced.
+差异颇具启示性。AGC 的"核心集"是固定大小、固定数量（7 个）且静态分配的。goroutine 的状态是堆分配且可增长的。AGC 无法从未能让出控制权的作业中恢复——系统会挂起。现代协作式系统增加了安全阀：Go 在函数序言处插入抢占点；Tokio 的 `yield_now()` 是自愿的，但文化上是强制执行的。
 
-But the AGC had something modern systems often lack: **the guarantee that the worst case was analysed**. With only 7 core sets and a known set of jobs, MIT engineers could prove by inspection that every job yielded within bounded time. They could enumerate every possible scheduling state. Try doing that with 10,000 goroutines.
+但 AGC 拥有现代系统通常缺乏的东西：**对最坏情况已经过分析的保证**。只有 7 个核心集和一组已知的作业，MIT 工程师可以通过检验来证明每个作业都在有界时间内让出控制权。他们可以枚举每个可能的调度状态。试试用 10,000 个 goroutine 做到这一点。
 
-The `NEWJOB` check embedded in the interpreter's `DANZIG` loop — where every pair of interpreted instructions triggers a scheduling check — anticipates what Kotlin coroutines call "suspension points." The interpreter doesn't just run math; it cooperates with the scheduler at instruction boundaries. This is the same insight that makes modern async runtimes work: interleave computation with scheduling checks at granular intervals, and you get responsive multitasking without preemption.
+解释器 `DANZIG` 循环中嵌入的 `NEWJOB` 检查——每对解释指令都触发一次调度检查——预示了 Kotlin 协程所称的"挂起点"。解释器不只是运行数学运算；它在指令边界处与调度器协作。这与现代异步运行时工作的核心洞见相同：在细粒度的间隔处将计算与调度检查交织在一起，就能在没有抢占的情况下实现响应式多任务。
 
-### 1.2 Checkpoint/Restart: Crash-Only Design in 1966
+### 1.2 检查点/重启：1966 年的只崩溃设计
 
-The restart system described in Chapter 3 is the AGC's most prescient contribution to software architecture. The core ideas:
+第 3 章描述的重启系统是 AGC 对软件架构最具前瞻性的贡献。核心思想：
 
-1. Every significant computation periodically records its **phase** — a small integer indicating "I've reached step N"
-2. Phase values are stored in duplicate (value and complement) for integrity checking
-3. On restart, the system verifies phase table consistency, reinitialises all scheduling infrastructure (Waitlist and Executive), and re-enters each active program at its last recorded phase
-4. The restart preserves critical state (engine on/off, navigation vectors, flag words) while destroying transient state (pending tasks, display state, job queues)
+1. 每个重要的计算都定期记录其**阶段**——一个小整数，表示"我已到达步骤 N"
+2. 阶段值以副本形式存储（值和补码）以进行完整性检查
+3. 重启时，系统验证阶段表的一致性，重新初始化所有调度基础设施（等待列表和执行程序），并在其最后记录的阶段重新进入每个活跃程序
+4. 重启保留关键状态（发动机开/关、导航矢量、标志字），同时销毁瞬态状态（待处理任务、显示状态、作业队列）
 
-This is **exactly** the crash-only design pattern that Candea and Fox formalised at Stanford in 2003 — thirty-seven years later. Their insight was that systems designed to be safely crashed and restarted are more reliable than systems designed never to crash, because the recovery path is exercised constantly and therefore well-tested. The AGC exercised its recovery path during every mission, often multiple times.
+这**正是** Candea 和 Fox 在 2003 年于斯坦福正式化的只崩溃设计模式——晚了三十七年。他们的洞见是：设计为可以安全崩溃和重启的系统比设计为永不崩溃的系统更可靠，因为恢复路径被持续执行，因此经过了充分测试。AGC 在每次任务中都执行其恢复路径，通常是多次。
 
-The parallel to Erlang's "let it crash" philosophy (1986, twenty years after the AGC) is even more direct. Erlang supervisors maintain a tree of processes; when a process crashes, the supervisor restarts it from a known state. The AGC's `GOPROG` routine is a supervisor. The phase table is the known state. The `PHASCHNG` call is the equivalent of Erlang's process state checkpointing.
+与 Erlang 的"让它崩溃"哲学（1986 年，比 AGC 晚二十年）的类比更为直接。Erlang 监督器维护进程树；当一个进程崩溃时，监督器从已知状态重启它。AGC 的 `GOPROG` 程序就是一个监督器。阶段表就是已知状态。`PHASCHNG` 调用等同于 Erlang 的进程状态检查点。
 
-But the AGC goes further than Erlang in one critical respect: **transactional memory protection**. The `ERESTORE`/`SKEEP5`/`SKEEP6` mechanism described in Chapter 3 implements a write-ahead log for erasable memory modifications. If a restart catches the system mid-write, the partial operation is rolled back using saved copies. This is a database technique — journaling — implemented in 15-bit assembly on a machine with 2K of RAM. Modern embedded systems routinely corrupt flash storage on unexpected power loss because they lack exactly this protection.
+但 AGC 在一个关键方面比 Erlang 更进一步：**事务性内存保护**。第 3 章描述的 `ERESTORE`/`SKEEP5`/`SKEEP6` 机制为可擦除内存修改实现了预写日志。如果重启发生在系统写操作进行到一半时，使用保存的副本将部分操作回滚。这是一种数据库技术——日志记录——在一台拥有 2K RAM 的机器上用 15 位汇编实现。现代嵌入式系统在意外断电时经常损坏闪存存储，正是因为缺乏这种保护。
 
-The phase table's dual-copy integrity check (store both the phase and its complement, verify they're consistent on restart) is a checksumming scheme. It catches single-bit errors, stuck bits, and partial writes. Modern safety-critical systems use CRC-32 or SHA-256 for the same purpose, but the principle is identical: never trust persistent state without verification.
+阶段表的双副本完整性检查（同时存储阶段值和其补码，重启时验证其一致性）是一种校验和方案。它能检测单位错误、粘滞位和部分写入。现代安全关键系统为了同样的目的使用 CRC-32 或 SHA-256，但原理是相同的：永远不要在没有验证的情况下信任持久状态。
 
-### 1.3 The Interpreter: A Bytecode VM Before Bytecode
+### 1.3 解释器：字节码之前的字节码虚拟机
 
-The AGC interpreter, documented in Chapter 6, is one of the earliest deployed bytecode virtual machines. It packs two 7-bit opcodes per 15-bit word, provides double-precision and vector arithmetic, trigonometric functions, matrix operations, and a pushdown stack — all running at 10-25x slower than native code. It saved an estimated 15,000-40,000 words of ROM, making the difference between software that fit in the AGC and software that didn't.
+第 6 章记录的 AGC 解释器是最早部署的字节码虚拟机之一。它将两个 7 位操作码打包进一个 15 位字中，提供双精度和向量算术、三角函数、矩阵运算和下推栈——所有这些都以比原生代码慢 10-25 倍的速度运行。它估计节省了 15,000-40,000 字的 ROM，使得软件能装入 AGC 而不至于装不下。
 
-The trade-off — code density versus execution speed — is the same trade-off that drives every bytecode system since. The JVM exists because Java bytecode is more compact than native x86 and portable across architectures. WebAssembly exists because WASM binaries are smaller than JavaScript and faster to parse. The AGC interpreter exists because the Moon landing software wouldn't fit in 36K words of native assembly.
+代码密度与执行速度的权衡——是自此以后每个字节码系统都面临的相同权衡。JVM 的存在是因为 Java 字节码比原生 x86 更紧凑，且可跨架构移植。WebAssembly 的存在是因为 WASM 二进制文件比 JavaScript 更小，解析更快。AGC 解释器的存在是因为登月软件装不进 36K 字的原生汇编中。
 
-What's remarkable is how modern the design feels. The EDOP register as a hardware opcode unpacker anticipates RISC-V's compressed instruction extension (2017). The `DANZIG` cooperative scheduling checkpoint anticipates safe points in JVM garbage collection. The polymorphic MPAC (scalar, triple-precision, or vector depending on MODE) anticipates tagged unions and variant types. The pushdown list with implicit operand addressing anticipates stack-based VMs from the JVM to the CLR to CPython.
+令人惊叹的是设计感觉多么现代。EDOP 寄存器作为硬件操作码解包器，预示了 RISC-V 的压缩指令扩展（2017 年）。`DANZIG` 协作式调度检查点预示了 JVM 垃圾收集中的安全点。多态的 MPAC（根据 MODE 为标量、三倍精度或向量）预示了标记联合和变体类型。带隐式操作数寻址的下推列表预示了从 JVM 到 CLR 再到 CPython 的基于栈的虚拟机。
 
-The AGC interpreter was not ahead of its time — it was *of* its time, born from the same constraint pressure that produces good design in every era. When you can't afford the straightforward approach (native code for everything), you're forced to find a more general solution. The interpreter was that solution. It traded speed for space at exactly the ratio the mission required: the guidance equations could tolerate 10x slower execution because they ran at 2 Hz (human timescales), while the autopilot, which needed every microsecond, stayed in native assembly.
+AGC 解释器并不领先于其时代——它*属于*其时代，诞生于在每个时代都产生良好设计的相同约束压力。当你负担不起简单的方法（对所有东西使用原生代码）时，你就被迫寻找更通用的解决方案。解释器就是那个解决方案。它以任务所需的精确比率用速度换取空间：制导方程可以容忍 10 倍的执行速度降低，因为它们以 2 Hz 运行（人类时间尺度），而需要每一微秒的自动驾驶仪则保持原生汇编。
 
-This is the lesson modern developers routinely ignore: **not everything needs to run at the same speed**. The AGC team knew which code was time-critical and which wasn't, and they chose different execution strategies accordingly. How many microservices are written in Go "for performance" when they spend 99% of their time waiting on database queries?
+这是现代开发者经常忽视的教训：**并非所有东西都需要以相同的速度运行**。AGC 团队知道哪些代码是时间关键的，哪些不是，并据此选择了不同的执行策略。有多少微服务因为"性能原因"用 Go 编写，却把 99% 的时间花在等待数据库查询上？
 
-### 1.4 Verb-Noun: The Original Command-Line Interface
+### 1.4 动词-名词：原始的命令行界面
 
-The DSKY's Verb-Noun interface, documented in Chapter 7, predates Unix shells by several years. The grammar is simple: VERB *number* NOUN *number* ENTER. The Verb says what to do; the Noun says what to do it to. Both are two-digit decimal codes looked up from cue cards velcroed to the spacecraft panels.
+第 7 章记录的 DSKY 动词-名词界面比 Unix shell 早了几年。语法很简单：VERB *数字* NOUN *数字* ENTER。动词说做什么；名词说对什么做。两者都是两位十进制代码，从粘在飞船面板上的提示卡查找。
 
-The architectural parallels to modern CLIs are striking:
+与现代 CLI 的架构类比十分引人注目：
 
-| DSKY Concept | Modern Equivalent |
+| DSKY 概念 | 现代等价物 |
 |---|---|
-| Verb + Noun | Command + argument |
-| Extended verbs (V40+) | Subcommands / plugins |
-| `NVSUB` (programmatic display API) | stdout / display API |
-| `DSPLOCK` semaphore | Terminal mutex / PTY locking |
-| `ENDIDLE` with 3-way return | `await` with resolve/reject/cancel |
-| Monitor verbs (V11-V17) | `watch` / live dashboards |
-| `DSPTAB` dirty flags | Virtual DOM diffing |
+| 动词 + 名词 | 命令 + 参数 |
+| 扩展动词（V40+） | 子命令 / 插件 |
+| `NVSUB`（程序化显示 API） | stdout / 显示 API |
+| `DSPLOCK` 信号量 | 终端互斥锁 / PTY 锁定 |
+| 带三路返回的 `ENDIDLE` | 带 resolve/reject/cancel 的 `await` |
+| 监视动词（V11-V17） | `watch` / 实时仪表板 |
+| `DSPTAB` 脏标记 | 虚拟 DOM 差异比较 |
 
-The `DSPTAB` comparison is not hyperbolic. React's virtual DOM works by maintaining an in-memory representation of the UI, diffing it against the previous state, and only sending changes to the real DOM. Pinball's `DSPTAB` maintains an in-memory representation of the display, uses sign bits as dirty flags, and the T4RUPT service routine only writes changed entries to I/O channel 10. The AGC's "virtual DOM" is 14 words. React's is megabytes. The principle is identical.
+`DSPTAB` 的比较并不夸张。React 的虚拟 DOM 通过维护 UI 的内存表示、将其与先前状态进行差异比较，并只将变化发送到真实 DOM 来工作。Pinball 的 `DSPTAB` 维护显示的内存表示，使用符号位作为脏标记，T4RUPT 服务程序只将更改的条目写入 I/O 通道 10。AGC 的"虚拟 DOM"是 14 个字。React 的是数兆字节。原理是相同的。
 
-The `ENDIDLE` sleep/wake mechanism with its three-way return (terminate / proceed / data-in) is the 1960s version of a Promise with resolve, reject, and a third state. The calling convention — `TC ENDIDLE` followed by three consecutive handler addresses — is more elegant than most modern callback APIs. The constraint that only one ENDIDLE can be active at a time (enforced by aborting with code 01206 if violated) is a simplification that modern UI frameworks could learn from: you can only ask the user one question at a time, because there's only one user looking at one screen.
+带三路返回（终止/继续/数据输入）的 `ENDIDLE` 睡眠/唤醒机制，是 1960 年代版本的带 resolve、reject 和第三种状态的 Promise。调用约定——`TC ENDIDLE` 后面跟着三个连续的处理程序地址——比大多数现代回调 API 更优雅。一次只能有一个 ENDIDLE 活跃的约束（如果违反则以代码 01206 中止），是现代 UI 框架可以学习的简化：你一次只能向用户提一个问题，因为只有一个用户在看一个屏幕。
 
-But the deepest lesson from Pinball is about the relationship between hardware constraints and interface design. The DSKY had 19 keys and no alphabetic display. You *couldn't* type "display velocity" — you had to type "V06 N62 E." This forced a structured, unambiguous command grammar. There was no parsing ambiguity, no natural language interpretation, no "did you mean...?" The interface was alien to pilots trained on dials and switches, and most astronauts hated it. But it was precise, predictable, and implementable in 3,800 lines of assembly.
+但来自 Pinball 的最深刻教训是关于硬件约束与界面设计之间的关系。DSKY 有 19 个键，没有字母显示器。你*无法*输入"display velocity"——你必须输入"V06 N62 E"。这强制形成了一种结构化、无歧义的命令语法。没有解析歧义，没有自然语言解释，没有"您是否是指……？"。对于受过仪表盘和开关训练的飞行员来说，这个界面很陌生，大多数宇航员都讨厌它。但它是精确的、可预测的，并且可以用 3,800 行汇编代码实现。
 
-Today's trend toward natural language interfaces (chatbots, voice assistants, LLM-powered tools) represents the opposite end of the spectrum: maximum expressiveness, minimum structure, massive ambiguity. There is a lesson in the DSKY's rigidity. When the stakes are high — when a misinterpreted command means crashing into the Moon — you want a grammar that admits no ambiguity. The AGC team understood this. The Verb-Noun interface was not a compromise; it was a deliberate choice to make the human-computer communication channel as unambiguous as possible.
-
----
-
-## 2. Constraints as a Design Force
-
-### 2.1 When You Can't Add Another Dependency
-
-The AGC had 36,864 words of ROM, 2,048 words of RAM, and a cycle time of 11.72 microseconds. There was no linker, no package manager, no operating system, no heap allocator. Every word of memory was accounted for. Every instruction mattered.
-
-These constraints produced designs of extraordinary density. The Executive's use of `-0` (negative zero) to mark free core sets, positive values for active jobs, and negative values for sleeping jobs — all distinguished by a single `CCS` instruction — is impossible in 2's complement arithmetic. It exploits a quirk of 1's complement to encode three states in one 15-bit word. A modern developer would use an enum with three variants and think nothing of the three bytes it consumes. The AGC developer couldn't afford those bytes.
-
-The Waitlist's `ENDTASK` sentinel is both a null-task marker AND a periodic housekeeping trigger. When no real task replaces it and it fires, it runs `SVCT3` to check the drift flag and schedule IMU compensation. The sentinel does double duty. A modern developer would have separate null markers and housekeeping timers and think nothing of the extra memory.
-
-The `-CCSPR` trick in the Executive's priority scan (Chapter 1, Section 3.6) is the most extreme example: the *address* of an instruction in the scan loop encodes which core set it belongs to. By subtracting a known reference address from the scan loop's instruction address, the code recovers the core set offset without maintaining a separate data structure. The instruction stream *is* the data structure.
-
-These are not tricks for tricks' sake. They are the inevitable result of building a complete real-time operating system in 600 lines of assembly. When you cannot add a word of memory, you make every word count. When you cannot add an instruction, you make every instruction do double duty.
-
-Modern software rarely faces these constraints. A Kubernetes pod gets 256MB of RAM by default. A typical Node.js microservice pulls in 1,200 npm packages. The marginal cost of adding another dependency, another abstraction layer, another data structure is approximately zero. And so we add them freely, and our systems grow to encompass millions of lines of code that no single person understands.
-
-The AGC teaches the opposite lesson: **the best code is code that doesn't exist**. Every line the MIT team didn't write was a line that couldn't contain a bug, couldn't consume memory, couldn't take CPU cycles. The interpreter exists not because a virtual machine is inherently good, but because it was the *smallest* way to fit the guidance equations into ROM. The Waitlist's unrolled search loop exists not because unrolling is clever, but because it guarantees worst-case timing with zero loop overhead.
-
-### 2.2 Fixed Pools vs Dynamic Allocation
-
-The AGC has no `malloc`. Every data structure is statically sized: 7 core sets, 5 VAC areas, 9 Waitlist slots, 14 DSPTAB entries. The total number of concurrent tasks was determined at compile time and verified by static analysis.
-
-When these fixed pools overflow, the system generates an alarm (1201 for no VAC areas, 1202 for no core sets, 1203 for no Waitlist slots) and either recovers gracefully or aborts. There is no "try again with a bigger allocation" — there is no bigger allocation.
-
-This is the opposite of modern practice, where dynamic allocation is the default and resource exhaustion is handled (if at all) by catching `OutOfMemoryError`. The AGC approach has a significant advantage: **the worst case is knowable**. If you can prove that no more than 7 jobs and 9 timed tasks will ever be active simultaneously, you can prove the system will never run out of resources under normal conditions. And if an abnormal condition (like the rendezvous radar flooding the system with interrupts) causes overflow, you get a specific alarm code and a known recovery path.
-
-Modern embedded systems — automotive ECUs, medical devices, avionics — still follow this pattern. MISRA C forbids dynamic memory allocation after initialisation. DO-178C (the avionics software standard) requires worst-case resource analysis. The AGC's fixed-pool architecture is not an anachronism; it's the standard practice for any system where resource exhaustion could kill someone.
-
-The lesson for non-safety-critical systems: even if you *can* allocate dynamically, understanding your system's resource ceiling makes it more predictable. How many database connections does your service actually need? How many goroutines? How many in-flight HTTP requests? If you can answer these questions, you can size your pools statically and trade the overhead of dynamic allocation for the certainty of bounded resource usage.
-
-### 2.3 The 15-Bit Word and the Art of Encoding
-
-The 15-bit word (plus a parity bit) forced extraordinary creativity in data encoding. The `PRIORITY` register in each core set encodes both the job's priority level (in the upper bits) and its VAC area pointer (in the low 9 bits). A single `MASK LOW9` instruction separates them. A modern developer would use two separate fields in a struct and think nothing of the 8 bytes consumed.
-
-The interpreter's opcode packing — two 7-bit opcodes per word, with the sign bit distinguishing opcode pairs from store codes — is hardware/software co-design at its finest. The EDOP editing register provides a free 7-bit right shift on every access, serving as a hardware opcode unpacker. The instruction set was designed around the physical properties of a specific register in a specific computer. You cannot understand the interpreter without understanding the EDOP register, and you cannot understand the EDOP register without understanding the instruction set it was designed to unpack.
-
-This co-design is rare in modern software because modern software runs on general-purpose hardware with layers of abstraction between code and silicon. But it still appears in high-performance computing: GPU shader programming is co-design between the shader language and the GPU's execution units. SIMD intrinsics in C/C++ are co-design between the algorithm and the CPU's vector registers. The AGC took this to its logical extreme because it had no other option.
+今天向自然语言界面（聊天机器人、语音助手、LLM 驱动的工具）的趋势代表了频谱的另一端：最大的表现力，最少的结构，巨大的歧义。DSKY 的刚性中有一个教训。当赌注很高时——当误解一个命令意味着撞上月球时——你需要一种不允许歧义的语法。AGC 团队理解这一点。动词-名词界面不是妥协；它是一个深思熟虑的选择，使人机通信信道尽可能无歧义。
 
 ---
 
-## 3. Reliability Engineering
+## 2. 约束作为设计驱动力
 
-### 3.1 The 1202 Story: Graceful Degradation in Practice
+### 2.1 当你无法再添加依赖时
 
-The 1202 alarm during the Apollo 11 landing is the most famous software event in history. The facts: the rendezvous radar was left in a mode that generated spurious interrupts, consuming enough CPU time that the Executive's core sets filled up. When the next `FINDVAC` call couldn't find a free core set, alarm 1202 fired.
+AGC 有 36,864 字的 ROM、2,048 字的 RAM 和 11.72 微秒的周期时间。没有链接器，没有包管理器，没有操作系统，没有堆分配器。每个内存字都有其用途。每条指令都很重要。
 
-What happened next is the part that matters. The `ALARM` subroutine (Chapter 3, Section 3.2) did three things:
-1. Recorded the alarm code in `FAILREG` (for telemetry)
-2. Lit the PROG indicator on the DSKY (for the astronauts)
-3. **Returned to the caller**
+这些约束产生了密度非凡的设计。执行程序使用 `-0`（负零）标记空闲核心集，正值表示活跃作业，负值表示休眠作业——所有这些都由一条 `CCS` 指令区分——这在 2 的补码算术中是不可能的。它利用 1 的补码的一个怪特性，在一个 15 位字中编码三种状态。现代开发者会使用一个有三个变体的枚举，不会在意它消耗的三个字节。AGC 开发者负担不起那些字节。
 
-It did not abort. It did not halt. It did not panic. It recorded and returned. The Executive then proceeded with its normal overflow handling: the low-priority job that triggered the overflow was shed, and the high-priority guidance equations — which already held their core sets and VAC areas — continued running.
+等待列表的 `ENDTASK` 哨兵既是空任务标记，又是定期维护触发器。当没有真正的任务替换它而它触发时，它运行 `SVCT3` 来检查漂移标志并调度 IMU 补偿。哨兵身兼双职。现代开发者会有单独的空标记和维护定时器，不会在意额外的内存。
 
-When a full restart was triggered (via `GOJAM` -> `GOPROG`), the restart system:
-1. Incremented `REDOCTR` (the restart counter — Houston could see this in telemetry)
-2. Verified phase table integrity (dual-copy check)
-3. Reinitialised the Waitlist and Executive (clean scheduling state)
-4. Preserved engine state (the descent engine kept firing)
-5. Re-entered each active program at its last registered phase
-6. The guidance equations resumed within milliseconds
+执行程序优先级扫描中的 `-CCSPR` 技巧（第 1 章，第 3.6 节）是最极端的例子：扫描循环中一条指令的*地址*编码了它属于哪个核心集。通过从扫描循环的指令地址中减去一个已知的参考地址，代码无需维护单独的数据结构就能恢复核心集偏移量。指令流*就是*数据结构。
 
-The landing succeeded because the software was **designed to fail gracefully under overload**. This wasn't an accident or a lucky coincidence. It was Margaret Hamilton's team explicitly designing for the case where the computer had too much to do. The priority system ensured that when something had to give, it was the least important work. The phase table ensured that important work could resume after a restart. The engine state preservation ensured that a software restart didn't turn into a hardware catastrophe.
+这些不是为了技巧而技巧。它们是在 600 行汇编中构建完整实时操作系统的必然结果。当你无法增加一个字的内存时，你让每个字都物尽其用。当你无法增加一条指令时，你让每条指令都身兼双职。
 
-### 3.2 AGC Restart vs Erlang's "Let It Crash"
+现代软件很少面临这些约束。一个 Kubernetes pod 默认获得 256MB 的 RAM。一个典型的 Node.js 微服务拉入 1,200 个 npm 包。添加另一个依赖、另一个抽象层、另一个数据结构的边际成本约为零。所以我们自由地添加它们，我们的系统增长到没有任何一个人能完全理解的数百万行代码。
 
-The comparison is often made but rarely examined precisely. Here are the genuine parallels and the genuine differences:
+AGC 教导了相反的教训：**最好的代码是不存在的代码**。MIT 团队没有写的每一行代码都是一行不可能包含错误、不可能消耗内存、不可能占用 CPU 周期的代码。解释器的存在不是因为虚拟机本身是好的，而是因为它是将制导方程装入 ROM 的*最小*方式。等待列表的展开搜索循环的存在不是因为展开很聪明，而是因为它以零循环开销保证了最坏情况下的时序。
 
-**Parallels:**
-- Both assume crashes are inevitable and design the recovery path as a first-class concern
-- Both use supervision hierarchies (AGC's restart groups; Erlang's supervisor trees)
-- Both preserve essential state across restarts while discarding transient state
-- Both restart processes from a known-good initial state rather than trying to repair corrupted state
+### 2.2 固定池与动态分配
 
-**Differences:**
-- Erlang processes are isolated — one process crashing cannot corrupt another's memory. AGC jobs share erasable memory with no hardware protection. The `ERESTORE` transactional protection is a software substitute for hardware memory isolation.
-- Erlang supervisors can choose restart strategies (one-for-one, one-for-all, rest-for-one). The AGC's restart is all-or-nothing: `STARTSUB` reinitialises all scheduling infrastructure, and the phase table determines what gets restarted.
-- Erlang processes crash individually. The AGC restarts globally (via `GOJAM`). There is no concept of "restart just the radar processing" — the entire software state is reinitialised, and then each program decides whether to resume based on its phase.
-- Erlang restarts are frequent and expected (the "let it crash" philosophy encourages designing for it). AGC restarts were exceptional — the system was designed to tolerate them, not to rely on them.
+AGC 没有 `malloc`。每个数据结构都是静态大小的：7 个核心集，5 个 VAC 区域，9 个等待列表槽，14 个 DSPTAB 条目。并发任务的总数在编译时确定并通过静态分析验证。
 
-The deepest lesson is not about the mechanism but about the mindset: **design your recovery path before you design your happy path**. The AGC team spent enormous effort on restart protection — `PHASCHNG` calls appear throughout the codebase, in every significant module. The phase table machinery, the dual-copy integrity checks, the `ERESTORE` transactional protection — this is probably 10-15% of the total codebase devoted to recovery. Modern systems typically spend less than 1% of their code on recovery, and it shows.
+当这些固定池溢出时，系统生成一个警报（1201 表示没有 VAC 区域，1202 表示没有核心集，1203 表示没有等待列表槽），然后优雅地恢复或中止。没有"用更大的分配再试一次"——没有更大的分配。
 
-### 3.3 What Modern Systems Need AGC-Style Restart
+这与现代做法相反，现代做法中动态分配是默认的，资源耗尽通过捕获 `OutOfMemoryError` 来处理（如果有的话）。AGC 方法有一个显著优势：**最坏情况是可知的**。如果你能证明在任何给定时刻不会有超过 7 个作业和 9 个定时任务同时活跃，你就能证明系统在正常条件下永远不会耗尽资源。而如果异常情况（如交会雷达用中断淹没系统）导致溢出，你会得到一个特定的警报代码和一个已知的恢复路径。
 
-**Embedded controllers with unreliable power.** IoT devices, automotive ECUs, and industrial controllers lose power unexpectedly. The AGC's `ERESTORE` mechanism — transactional protection for mid-write erasable memory — directly applies. Most embedded firmware today handles power loss by hoping the flash filesystem's journaling works. The AGC's approach of explicitly tracking "what was being modified" and "what are the backup copies" is more deterministic.
+现代嵌入式系统——汽车 ECU、医疗设备、航空电子——仍然遵循这种模式。MISRA C 禁止初始化后的动态内存分配。DO-178C（航空软件标准）要求最坏情况资源分析。AGC 的固定池架构不是时代的遗物；它是任何资源耗尽可能危及生命的系统的标准实践。
 
-**Long-running data pipelines.** A Spark job that runs for 6 hours and crashes at hour 5 restarts from scratch unless the developer explicitly implemented checkpointing. The AGC's phase table is a lightweight checkpointing system: each significant step records its completion, and recovery resumes from the last recorded step. Modern workflow engines (Temporal, Airflow) provide similar functionality, but most bespoke data pipelines don't.
+对于非安全关键系统的教训：即使你*可以*动态分配，理解系统的资源上限也会使其更具可预测性。你的服务实际需要多少数据库连接？多少 goroutine？多少正在进行的 HTTP 请求？如果你能回答这些问题，你可以静态地确定池大小，用动态分配的开销换取有界资源使用的确定性。
 
-**Financial transaction processing.** The AGC's dual-copy phase verification (store both the value and its complement, verify consistency on restart) is a simple but effective corruption detector. Financial systems use similar techniques (double-entry bookkeeping is the same idea at a higher abstraction level), but middleware and message queues often lack this kind of self-verification.
+### 2.3 15 位字与编码的艺术
 
-**Anything that controls actuators.** The AGC's most critical restart feature is engine state preservation: the restart path at `SETINFL` explicitly checks `ENGONBIT` and restores the engine to its pre-restart state. Any system that controls physical actuators — robot arms, CNC machines, medical infusion pumps — needs the same discipline: on software restart, physical state must be preserved or safely parked, never left in an undefined state.
+15 位字（加一个奇偶校验位）迫使在数据编码方面产生了非凡的创造力。每个核心集中的 `PRIORITY` 寄存器同时编码作业的优先级（高位）和 VAC 区域指针（低 9 位）。一条 `MASK LOW9` 指令将它们分开。现代开发者会在结构体中使用两个单独的字段，不会在意消耗的 8 个字节。
+
+解释器的操作码打包——每个字两个 7 位操作码，符号位区分操作码对和存储码——是硬件/软件协同设计的极致。EDOP 编辑寄存器在每次访问时提供免费的 7 位右移，充当硬件操作码解包器。指令集是围绕特定计算机中特定寄存器的物理特性设计的。你无法在不理解 EDOP 寄存器的情况下理解解释器，而你无法在不理解它被设计为解包的指令集的情况下理解 EDOP 寄存器。
+
+这种协同设计在现代软件中很少见，因为现代软件运行在通用硬件上，代码和硅之间有多层抽象。但它仍然出现在高性能计算中：GPU 着色器编程是着色器语言和 GPU 执行单元之间的协同设计。C/C++ 中的 SIMD 内在函数是算法和 CPU 向量寄存器之间的协同设计。AGC 将其推向了逻辑极限，因为它别无选择。
 
 ---
 
-## 4. The Human Element
+## 3. 可靠性工程
 
-### 4.1 Comments as Cultural Artefacts
+### 3.1 1202 事件：优雅降级的实践
 
-The AGC codebase is famous for its comments, and the walkthroughs surface dozens of them. They fall into several categories:
+Apollo 11 着陆过程中的 1202 警报是历史上最著名的软件事件。事实是：交会雷达保持在一个产生杂散中断的模式，消耗了足够多的 CPU 时间，以至于执行程序的核心集被占满。当下一次 `FINDVAC` 调用找不到空闲核心集时，1202 警报触发。
 
-**Territorial markers.** "NOLI SE TANGERE" (Touch it not), "HONI SOIT QUI MAL Y PENSE" (Shame on him who thinks evil of it), and the explicit credit "conceived and executed, and (NOTA BENE) is maintained by Adler and Eyles." These are code ownership declarations, written in Latin and Old French because the authors were MIT engineers in the 1960s and this is what passed for intimidation in that milieu. The modern equivalent is a `CODEOWNERS` file, but it lacks the panache.
+接下来发生的事才是重点。`ALARM` 子程序（第 3 章，第 3.2 节）做了三件事：
+1. 将警报代码记录在 `FAILREG` 中（用于遥测）
+2. 点亮 DSKY 上的 PROG 指示灯（用于宇航员）
+3. **返回调用者**
 
-**Emotional honesty.** "TEMPORARY, I HOPE HOPE HOPE" on a call to `STOPRATE` in the landing guidance. The programmer knew it was a hack, said so, and shipped it anyway because the Moon landing was in six days. This comment has more integrity than every "TODO: fix this later" in every modern codebase, because the author was honest about both the problem and the likelihood of fixing it (zero).
+它没有中止。它没有停机。它没有崩溃。它记录并返回。然后执行程序继续其正常的溢出处理：触发溢出的低优先级作业被丢弃，而已经持有其核心集和 VAC 区域的高优先级制导方程——继续运行。
 
-**Vivid verbs.** "EXTIRPATE junk left in DVTOTAL." "ASSASSINATE CLOKTASK." These are not just comments; they are *precise* descriptions. Extirpate means to root out completely — the register is not just cleared, its contaminating residue is destroyed. Assassinate means to kill without the victim's knowledge — CLOKTASK doesn't know it's been killed until it checks DISPDEX on its next cycle. The word choices encode information about the mechanism that generic verbs like "clear" and "stop" would not.
+当完整重启通过 `GOJAM` -> `GOPROG` 触发时，重启系统：
+1. 递增 `REDOCTR`（重启计数器——休斯顿可以在遥测中看到这个）
+2. 验证阶段表完整性（双副本检查）
+3. 重新初始化等待列表和执行程序（干净的调度状态）
+4. 保留发动机状态（下降发动机继续点火）
+5. 在其最后注册的阶段重新进入每个活跃程序
+6. 制导方程在几毫秒内恢复
 
-**Literary references.** GUILDENSTERN (from Hamlet, via Stoppard) for the mode-switching monitor. ELVIRA and ZERLINA (from Don Giovanni) for the redesignation controller state. The Shakespeare quotation at the head of Pinball, defending the use of "verbs and nouns" against philistine critics. These references were not decorative — they were mnemonic. In a codebase with thousands of labels, memorable names (even absurd ones) help programmers navigate.
+着陆成功是因为软件**被设计为在过载下优雅降级**。这不是意外或幸运的巧合。这是 Margaret Hamilton 的团队明确为计算机任务过多的情况而设计的。优先级系统确保当有什么必须让步时，让步的是最不重要的工作。阶段表确保重要工作可以在重启后恢复。发动机状态保留确保软件重启不会变成硬件灾难。
 
-**Self-aware humour.** `? = GOTOPOOH` — the question mark label, pointing at the "do nothing" routine. `CURTAINS` as the name for a non-fatal alarm routine (dramatic name, undramatic function). `BURN, BABY, BURN` for the master ignition routine — referencing a DJ's catchphrase, the Watts riots, and the literal burning of rocket fuel simultaneously.
+### 3.2 AGC 重启与 Erlang 的"让它崩溃"
 
-### 4.2 What the Comments Tell Us About the Team
+这种比较经常被提及，但很少被精确审查。以下是真正的相似之处和真正的差异：
 
-The AGC team was small (roughly 350 people at MIT/IL, with perhaps 30-50 writing flight software), young (many were in their twenties), and operating under extreme pressure (fixed deadline, zero margin for error, national prestige at stake). The comments reveal a team that:
+**相似之处：**
+- 两者都假设崩溃是不可避免的，并将恢复路径设计为一等公民
+- 两者都使用监督层次结构（AGC 的重启组；Erlang 的监督树）
+- 两者都在重启期间保留基本状态，同时丢弃瞬态状态
+- 两者都从已知的良好初始状态重启进程，而不是试图修复损坏的状态
 
-1. **Took pride in individual authorship.** The Latin inscriptions in BURN_BABY_BURN are territorial. The `NUMERO MYSTERIOSO` comment is honest about where one programmer's understanding ended. The credits at module headers identify specific individuals. This is a team where code had *authors*, not anonymous contributors.
+**差异：**
+- Erlang 进程是隔离的——一个进程崩溃不能损坏另一个进程的内存。AGC 作业共享可擦除内存，没有硬件保护。`ERESTORE` 事务性保护是硬件内存隔离的软件替代品。
+- Erlang 监督器可以选择重启策略（一对一、一对全、其余对一）。AGC 的重启是全有或全无的：`STARTSUB` 重新初始化所有调度基础设施，阶段表决定什么被重启。
+- Erlang 进程单独崩溃。AGC 全局重启（通过 `GOJAM`）。没有"只重启雷达处理"的概念——整个软件状态被重新初始化，然后每个程序根据其阶段决定是否恢复。
+- Erlang 重启频繁且预期（"让它崩溃"哲学鼓励为此而设计）。AGC 重启是例外的——系统被设计为容忍它们，而不是依赖它们。
 
-2. **Used humour as a coping mechanism.** You don't name your fatal-error handler `POODOO` unless you've stared at the possibility of failure long enough to find it funny. The jokes are a pressure valve.
+最深刻的教训不是关于机制，而是关于思维方式：**在设计正常路径之前先设计恢复路径**。AGC 团队在重启保护上投入了大量精力——`PHASCHNG` 调用遍布整个代码库，在每个重要模块中。阶段表机制、双副本完整性检查、`ERESTORE` 事务性保护——这可能是专门用于恢复的代码库总量的 10-15%。现代系统通常将不到 1% 的代码用于恢复，这一点从结果上就能看出来。
 
-3. **Valued cleverness within discipline.** The code is full of ingenious tricks (the `-CCSPR` address-as-data pattern, the three-`DXCH` swap, the `CYL` register as an octal digit extractor), but every trick serves a purpose — saving a word of memory, saving a cycle of execution time, saving a register. This is not showing off; this is engineering under constraints so tight that cleverness is required for survival.
+### 3.3 哪些现代系统需要 AGC 式重启
 
-4. **Were literate.** Shakespeare, Mozart, Latin, Old French, Stoppard — the references span centuries. This was an era when engineering education included humanities, and it shows in the code.
+**具有不可靠电源的嵌入式控制器。** IoT 设备、汽车 ECU 和工业控制器会意外断电。AGC 的 `ERESTORE` 机制——对可擦除内存写入中途的事务性保护——直接适用。今天大多数嵌入式固件通过希望闪存文件系统的日志记录能工作来处理断电。AGC 明确跟踪"正在修改什么"和"备份副本是什么"的方法更具确定性。
 
-### 4.3 Margaret Hamilton and the Discipline of Software Engineering
+**长时间运行的数据管道。** 运行 6 小时后在第 5 小时崩溃的 Spark 作业会从头重启，除非开发者显式实现了检查点。AGC 的阶段表是一个轻量级的检查点系统：每个重要步骤记录其完成，恢复从最后记录的步骤恢复。现代工作流引擎（Temporal、Airflow）提供类似功能，但大多数定制数据管道没有。
 
-Margaret Hamilton led the software engineering division at MIT/IL. She is credited with coining the term "software engineering" — a phrase that was considered an oxymoron in the 1960s, when "real" engineering meant hardware.
+**金融交易处理。** AGC 的双副本阶段验证（同时存储值和其补码，重启时验证一致性）是一个简单但有效的损坏检测器。金融系统使用类似技术（复式记账是更高抽象层次上的相同思想），但中间件和消息队列通常缺乏这种自我验证。
 
-The walkthrough chapters reveal her team's engineering discipline at every level:
-
-- **The restart system** is not a hack bolted on after a test failure. It is an architectural commitment that pervades the entire codebase. Every significant module contains `PHASCHNG` calls. Every module is written with the assumption that execution could be interrupted at any point and must be resumable.
-
-- **The priority system** is not an afterthought. It is the central design decision of the Executive: when resources are scarce, shed low-priority work. This decision — made years before the mission — is what saved the Apollo 11 landing when the 1202 alarms fired.
-
-- **The alarm codes** form a structured diagnostic language: 1201 (no VAC areas), 1202 (no core sets), 1203 (Waitlist overflow), 1107 (phase table corruption), 01410 (guidance overflow). Each code identifies a specific failure mode with a specific recovery path. This is the 1960s equivalent of structured error handling.
-
-Hamilton reportedly pushed for what she called "priority displays" — the ability for software to interrupt the astronaut with critical information even when the astronaut was doing something else. This is the `DSPLOCK` override mechanism in Pinball, where program alarms can light the PROG indicator regardless of who "owns" the display. It is also the philosophical ancestor of every push notification, every red-banner alert, every "are you sure?" dialog in modern software.
-
-The key insight was not technical but organisational: Hamilton recognised that software was not less critical than hardware, and insisted that it be engineered with the same rigour. The proof is in the code: the testing discipline, the restart protection, the priority system, the alarm codes, the human-factors design of the DSKY interface. These are not the products of "programming" — they are the products of *engineering*.
-
----
-
-## 5. What Would a 2026 Engineer Do Differently?
-
-### 5.1 Genuinely Timeless Decisions
-
-**Priority-based shedding under overload.** When a system has more work than it can handle, the correct response is to drop low-priority work, not to slow everything down equally. The AGC does this via the Executive's priority scheduler and the restart system's phase-based recovery. Modern systems that implement backpressure (like reactive streams) or circuit breakers (like Hystrix) are following the same principle, but few do it as cleanly as the AGC. The 1202 story is the canonical example: the computer didn't slow down the guidance equations to make room for radar processing. It dropped the radar processing and kept the guidance running.
-
-**Static worst-case analysis.** The Waitlist header contains a hand-written WCET (Worst-Case Execution Time) analysis — in 1966, before real-time systems theory existed as a formal discipline. The analysis accounts for interrupt latency, counter servicing, task queue drain time, and the timer ISR's own execution time. Modern safety-critical systems use tools like aiT and RapiTime for WCET analysis, but the principle is the same: if you can't prove your system meets its timing requirements, you don't know if it works.
-
-**Checkpoint before you might crash.** The `PHASCHNG` discipline — record your state before doing anything that might be interrupted — is universally applicable. Database WALs, message queue acknowledgements, and distributed transaction logs all implement the same idea. The AGC's innovation was applying it to a real-time control system, not just a data store.
-
-**Make the recovery path a first-class citizen.** The AGC team spent substantial effort on code that ran only during failures. Modern teams often treat error handling as an afterthought — "we'll add retry logic later." The AGC teaches that "later" doesn't exist when your code is woven into core rope and launched toward the Moon.
-
-### 5.2 Artefacts of the Hardware Era
-
-**Cooperative-only multitasking.** The AGC's lack of preemption was a constraint, not a choice. A misbehaving job could hang the system. Modern safety-critical systems use preemptive schedulers with hardware timer support, and they're right to do so. Cooperative multitasking is fine for I/O-bound workloads (and it's making a comeback via async/await), but for hard real-time control, preemption is essential.
-
-**The interpreter's performance tax.** The 10-25x slowdown of interpreted code was acceptable in 1969 because the guidance equations ran at 2 Hz. Modern JIT compilers (V8, GraalVM, LLVM) eliminate most of this penalty. If the AGC had a JIT compiler, the interpreter would still have been a good idea (for code density), but the performance argument against it would have disappeared.
-
-**Fixed-size everything.** Seven core sets, five VAC areas, nine Waitlist slots — these limits were determined by static analysis and hard-coded. Modern systems need more flexibility: container orchestrators scale horizontally, memory allocators handle variable-size requests, thread pools grow and shrink. The AGC's fixed-pool approach is still valid for safety-critical systems, but it requires analysis that most teams can't afford.
-
-**The CCS instruction as universal conditional.** The four-way skip based on positive/+0/negative/-0 was the only conditional branch on the AGC, and the entire software architecture was designed around it. This is an artefact of 1's-complement arithmetic that has no analog on modern 2's-complement machines. The encoding tricks it enabled (using -0 for "free" core sets) are elegant but unreproducible on modern hardware.
-
-**Core rope ROM.** The code was manufactured into hardware months before launch and could not be patched. This forced an extraordinary level of testing and verification — and also meant that "TEMPORARY, I HOPE HOPE HOPE" really was permanent. Modern OTA update capabilities remove this constraint, which is mostly a good thing (you can fix bugs in the field) but also removes a powerful motivator for getting it right the first time.
-
-### 5.3 AGC Lessons for Modern Safety-Critical Systems
-
-If you're building a safety-critical embedded system in 2026 — an autonomous vehicle controller, a surgical robot, a spacecraft — the AGC offers specific, actionable guidance:
-
-**Design your overload response before you design your normal operation.** The 1202 alarm was not a bug found in testing; it was a designed-in overload response. Decide now what your system does when it has more work than it can handle, and make that decision explicit in the architecture.
-
-**Verify your persistent state on every boot.** The AGC's dual-copy phase check catches corruption that would otherwise propagate silently. If your system stores state across restarts (and most do, even if only in a configuration file), verify its integrity before using it. A corrupt state that propagates is worse than a detected corruption that triggers safe-mode.
-
-**Separate your time-critical and non-time-critical code architecturally.** The AGC used native assembly for the autopilot (100 Hz) and the interpreter for guidance equations (2 Hz). Don't run your sensor fusion and your logging in the same execution context. Different timing requirements deserve different execution strategies.
-
-**If your system controls actuators, preserve actuator state across software restarts.** The AGC's engine-state preservation at `SETINFL` is the single most important safety feature in the restart code. A software restart that accidentally commands a rocket engine off — or a surgical arm to move — is a catastrophe. Your restart handler must know the physical state of every actuator and either preserve it or safely park it.
-
-**Cybersecurity changes the threat model but not the design principles.** The AGC had no attack surface — it was a standalone computer with hardwired I/O. Modern safety-critical systems face adversarial inputs, supply-chain attacks, and OTA update compromise. But the core principles still apply: validate all inputs (the AGC's 8/9 rejection in octal mode is input validation), maintain integrity of persistent state (dual-copy phase checks), and ensure that overload responses don't create exploitable states.
-
-**ML models in safety-critical loops need the same discipline as guidance equations.** If you're using a neural network for perception in an autonomous vehicle, it needs the same architectural treatment the AGC gave its guidance equations: bounded execution time, checkpoint protection, graceful degradation when the model produces anomalous outputs, and a fallback path that doesn't depend on the model.
+**任何控制执行器的系统。** AGC 最关键的重启特性是发动机状态保留：`SETINFL` 的重启路径明确检查 `ENGONBIT` 并将发动机恢复到重启前的状态。任何控制物理执行器的系统——机器人手臂、CNC 机器、医疗输液泵——都需要同样的原则：在软件重启时，物理状态必须被保留或安全停放，绝不能处于未定义状态。
 
 ---
 
-## Coda: The Density of Intent
+## 4. 人文因素
 
-What strikes me most about the AGC codebase, after seven chapters of close reading, is not its cleverness or its constraints but its **density of intent**. Every instruction was placed deliberately. Every constant was chosen to serve double duty. Every encoding was selected to minimise the code that interprets it. There is no dead code, no speculative feature, no "we might need this later."
+### 4.1 注释作为文化遗产
 
-Modern software is, by comparison, diffuse. We write code quickly and refactor it later (or don't). We add abstractions for future extensibility that never materialises. We import packages that import packages that import packages, and the dependency tree grows to encompass megabytes of code that no one has audited. We move fast and break things, and then we wonder why our systems are fragile.
+AGC 代码库以其注释闻名，导读中浮现出了其中数十个。它们分为几类：
 
-The AGC couldn't afford any of this. Every word of its 36K ROM was precious. Every feature was justified by mission requirements. And when the moment came — the 1202 alarm, 30,000 feet above the Moon, engines burning, fuel running out — the software worked exactly as designed.
+**领地标记。** "NOLI SE TANGERE"（勿碰此处）、"HONI SOIT QUI MAL Y PENSE"（对此有恶念者蒙羞），以及明确的署名"conceived and executed, and (NOTA BENE) is maintained by Adler and Eyles。"这些是代码所有权声明，用拉丁文和古法语写成，因为作者是 1960 年代的 MIT 工程师，这是那个圈子里的威慑方式。现代等价物是 `CODEOWNERS` 文件，但它缺乏那种风采。
 
-Not because it was perfect. Not because it never crashed. But because its designers had thought about what would happen when it crashed, and had built the recovery path with the same care as the happy path. Because they had made hard choices about what mattered and what didn't, and encoded those choices in the priority system. Because they had tested the failure modes as rigorously as the success modes.
+**情感诚实。** 着陆制导中调用 `STOPRATE` 处的"TEMPORARY, I HOPE HOPE HOPE"。程序员知道这是一个黑客，这么说了，还是发布了，因为登月只剩六天。这条注释比每个现代代码库中的每一个"TODO: 稍后修复"都更有诚意，因为作者对问题和修复的可能性（零）都诚实了。
 
-The 1202 alarm was the system *working*. That is the deepest lesson of the Apollo Guidance Computer, and it is the lesson most modern software teams have yet to learn.
+**生动的动词。** "EXTIRPATE junk left in DVTOTAL。""ASSASSINATE CLOKTASK。"这些不只是注释；它们是*精确*的描述。Extirpate 意味着彻底根除——寄存器不只是被清除，其污染残留被摧毁。Assassinate 意味着在受害者不知情的情况下杀死——CLOKTASK 直到在下一个周期检查 DISPDEX 才知道自己已经被杀死。词语选择编码了"clear"和"stop"等通用动词无法传达的机制信息。
+
+**文学引用。** GUILDENSTERN（来自哈姆雷特，通过斯托帕德）用于模式切换监视器。ELVIRA 和 ZERLINA（来自唐璜）用于重新指定控制器状态。Pinball 开头的莎士比亚引文，为使用"动词和名词"辩护，反驳俗气的批评者。这些引用不是装饰性的——它们是助记的。在一个有数千个标签的代码库中，令人难忘的名字（即使是荒谬的）帮助程序员导航。
+
+**自我意识的幽默。** `? = GOTOPOOH`——问号标签，指向"什么都不做"程序。`CURTAINS` 作为非致命警报程序的名字（戏剧性的名字，平淡的功能）。`BURN, BABY, BURN` 用于主点火程序——同时引用了一位 DJ 的口头禅、瓦茨暴乱和火箭燃料的字面燃烧。
+
+### 4.2 注释告诉我们关于团队的什么
+
+AGC 团队规模较小（MIT/IL 约 350 人，其中可能有 30-50 人编写飞行软件），年轻（许多人二十几岁），在极端压力下工作（固定截止日期，零错误余地，国家声誉岌岌可危）。注释揭示了一个：
+
+1. **以个人著作为荣**的团队。BURN_BABY_BURN 中的拉丁文铭文是领地性的。`NUMERO MYSTERIOSO` 注释对一位程序员理解止步之处是诚实的。模块头部的署名标识了具体个人。这是一个代码有*作者*而非匿名贡献者的团队。
+
+2. **以幽默作为应对机制**的团队。除非你盯着失败的可能性看得太久以至于觉得它有趣，否则你不会把致命错误处理程序命名为 `POODOO`。玩笑是减压阀。
+
+3. **在纪律内珍视聪明才智**的团队。代码中充满了巧妙的技巧（`-CCSPR` 地址即数据模式、三次 `DXCH` 交换、`CYL` 寄存器作为八进制数字提取器），但每个技巧都有其目的——节省一个内存字，节省一个执行周期，节省一个寄存器。这不是炫耀；这是在约束如此紧迫以至于聪明才智是生存所必需的工程。
+
+4. **有文化修养**的团队。莎士比亚、莫扎特、拉丁文、古法语、斯托帕德——引用跨越了几个世纪。那是一个工程教育包含人文学科的时代，这在代码中体现出来了。
+
+### 4.3 Margaret Hamilton 与软件工程的学科
+
+Margaret Hamilton 领导了 MIT/IL 的软件工程部门。她被认为创造了"软件工程"这个词——在 1960 年代，这被认为是一个自相矛盾的词，当时"真正的"工程意味着硬件。
+
+导读章节在每个层面上都揭示了她团队的工程纪律：
+
+- **重启系统**不是在测试失败后附加上去的黑客。它是贯穿整个代码库的架构承诺。每个重要模块都包含 `PHASCHNG` 调用。每个模块都以假设执行可能在任何时刻被中断且必须可恢复的方式编写。
+
+- **优先级系统**不是事后想到的。它是执行程序的核心设计决策：当资源稀缺时，丢弃低优先级工作。这个决策——在任务前数年做出——是在 1202 警报触发时拯救 Apollo 11 着陆的原因。
+
+- **警报代码**形成了一种结构化的诊断语言：1201（无 VAC 区域）、1202（无核心集）、1203（等待列表溢出）、1107（阶段表损坏）、01410（制导溢出）。每个代码标识一个特定的故障模式，并有特定的恢复路径。这是 1960 年代的结构化错误处理。
+
+Hamilton 据说推动了她所称的"优先级显示"——软件即使在宇航员正在做其他事情时也能用关键信息打断宇航员的能力。这是 Pinball 中的 `DSPLOCK` 覆盖机制，程序警报可以点亮 PROG 指示灯，无论谁"拥有"显示器。它也是每个推送通知、每个红色横幅警报、每个现代软件中"您确定吗？"对话框的哲学祖先。
+
+关键洞见不是技术性的，而是组织性的：Hamilton 认识到软件并不比硬件不重要，并坚持以同等严格的标准进行工程化。证据在代码中：测试纪律、重启保护、优先级系统、警报代码、DSKY 界面的人因设计。这些不是"编程"的产物——它们是*工程*的产物。
+
+---
+
+## 5. 2026 年的工程师会做什么不同？
+
+### 5.1 真正经得起时间考验的决策
+
+**过载时基于优先级的丢弃。** 当系统工作量超过其处理能力时，正确的响应是丢弃低优先级工作，而不是平等地减慢所有工作。AGC 通过执行程序的优先级调度器和重启系统的基于阶段的恢复来做到这一点。实现背压（如响应式流）或断路器（如 Hystrix）的现代系统遵循相同的原则，但很少像 AGC 那样干净地做到。1202 事件是典型案例：计算机没有为雷达处理腾出空间而减慢制导方程。它丢弃了雷达处理，保持制导运行。
+
+**静态最坏情况分析。** 等待列表头部包含一个手写的 WCET（最坏情况执行时间）分析——在 1966 年，彼时实时系统理论作为正式学科尚未存在。该分析考虑了中断延迟、计数器服务、任务队列排空时间和定时器 ISR 自身的执行时间。现代安全关键系统使用 aiT 和 RapiTime 等工具进行 WCET 分析，但原则相同：如果你无法证明你的系统满足其时序要求，你就不知道它是否工作。
+
+**在可能崩溃之前检查点。** `PHASCHNG` 原则——在做任何可能被中断的事情之前记录你的状态——是普遍适用的。数据库 WAL、消息队列确认和分布式事务日志都实现了相同的想法。AGC 的创新是将其应用于实时控制系统，而不仅仅是数据存储。
+
+**将恢复路径视为一等公民。** AGC 团队在只在故障期间运行的代码上花费了大量精力。现代团队经常把错误处理作为事后想法——"我们稍后会添加重试逻辑。"AGC 教导我们"稍后"不存在，当你的代码被编织进绳芯并发射向月球时。
+
+### 5.2 硬件时代的产物
+
+**仅协作式多任务。** AGC 缺乏抢占是一个约束，而非选择。一个行为不端的作业可能使系统挂起。现代安全关键系统使用带硬件定时器支持的抢占式调度器，这是正确的。协作式多任务对 I/O 密集型工作负载很好（它正通过 async/await 卷土重来），但对硬实时控制来说，抢占是必不可少的。
+
+**解释器的性能税。** 解释代码 10-25 倍的减速在 1969 年是可以接受的，因为制导方程以 2 Hz 运行。现代 JIT 编译器（V8、GraalVM、LLVM）消除了大部分这种惩罚。如果 AGC 有 JIT 编译器，解释器仍然是个好主意（为了代码密度），但反对它的性能论点就会消失。
+
+**固定大小的一切。** 七个核心集，五个 VAC 区域，九个等待列表槽——这些限制由静态分析确定并硬编码。现代系统需要更多灵活性：容器编排器横向扩展，内存分配器处理可变大小的请求，线程池扩大和缩小。AGC 的固定池方法对安全关键系统仍然有效，但需要大多数团队负担不起的分析。
+
+**CCS 指令作为通用条件。** 基于正/+0/负/-0 的四路跳转是 AGC 上唯一的条件分支，整个软件架构都是围绕它设计的。这是 1 的补码算术的产物，在现代 2 的补码机器上没有类比。它启用的编码技巧（使用 -0 表示"空闲"核心集）很优雅，但在现代硬件上无法复现。
+
+**绳芯 ROM。** 代码在发射前数月被制造进硬件，无法打补丁。这迫使进行非同寻常的测试和验证——也意味着"TEMPORARY, I HOPE HOPE HOPE"确实是永久的。现代 OTA 更新能力消除了这个约束，这大体上是件好事（你可以在现场修复错误），但也消除了第一次就做对的强大动机。
+
+### 5.3 AGC 对现代安全关键系统的教训
+
+如果你在 2026 年构建一个安全关键嵌入式系统——自动驾驶汽车控制器、外科手术机器人、航天器——AGC 提供了具体可操作的指导：
+
+**在设计正常操作之前先设计过载响应。** 1202 警报不是在测试中发现的错误；它是设计好的过载响应。现在就决定当你的系统工作量超过其处理能力时做什么，并在架构中明确那个决策。
+
+**在每次启动时验证持久状态。** AGC 的双副本阶段检查能捕获否则会静默传播的损坏。如果你的系统跨重启存储状态（大多数系统都会，即使只是在配置文件中），在使用它之前验证其完整性。一个传播的损坏状态比检测到的损坏触发安全模式更糟糕。
+
+**从架构上分离时间关键和非时间关键代码。** AGC 对自动驾驶仪（100 Hz）使用原生汇编，对制导方程（2 Hz）使用解释器。不要在同一执行上下文中运行传感器融合和日志记录。不同的时序要求值得不同的执行策略。
+
+**如果你的系统控制执行器，在软件重启时保留执行器状态。** AGC 在 `SETINFL` 的发动机状态保留是重启代码中最重要的安全特性。意外命令火箭发动机关闭——或外科手术臂移动——的软件重启是一场灾难。你的重启处理程序必须知道每个执行器的物理状态，并要么保留它，要么安全地停放它。
+
+**网络安全改变了威胁模型，但不改变设计原则。** AGC 没有攻击面——它是一台有硬连线 I/O 的独立计算机。现代安全关键系统面临对抗性输入、供应链攻击和 OTA 更新妥协。但核心原则仍然适用：验证所有输入（AGC 在八进制模式下的 8/9 拒绝就是输入验证），维护持久状态的完整性（双副本阶段检查），并确保过载响应不会创建可利用的状态。
+
+**安全关键循环中的 ML 模型需要与制导方程相同的规范。** 如果你在自动驾驶汽车中使用神经网络进行感知，它需要与 AGC 给制导方程相同的架构处理：有界执行时间、检查点保护、当模型产生异常输出时的优雅降级，以及一条不依赖于该模型的回退路径。
+
+---
+
+## 尾声：意图的密度
+
+在七章的深度阅读之后，AGC 代码库最让我印象深刻的，不是它的聪明才智或它的约束，而是它的**意图密度**。每条指令都是有意放置的。每个常量都被选择为一物多用。每种编码都被选择为最小化解释它的代码。没有死代码，没有投机性功能，没有"我们以后可能需要这个"。
+
+相比之下，现代软件是弥散的。我们快速编写代码，稍后重构（或者不重构）。我们为永远不会实现的未来扩展性添加抽象。我们导入包的包的包，依赖树增长到包含没有人审计过的数兆字节代码。我们快速行动，打破东西，然后我们想知道为什么我们的系统如此脆弱。
+
+AGC 负担不起任何这些。它 36K ROM 的每个字都是珍贵的。每个功能都由任务需求证明其合理性。而当那一刻来临——1202 警报，在月球上空 30,000 英尺，发动机点火，燃料耗尽——软件完全按设计运行。
+
+不是因为它是完美的。不是因为它从不崩溃。而是因为它的设计者思考过当它崩溃时会发生什么，并以与正常路径同等的关怀构建了恢复路径。因为他们对什么重要、什么不重要做出了艰难的选择，并将这些选择编码进了优先级系统。因为他们以与成功模式同等的严格程度测试了故障模式。
+
+1202 警报是系统在*正常工作*。这是阿波罗制导计算机最深刻的教训，也是大多数现代软件团队尚未学到的教训。
