@@ -1,36 +1,36 @@
-# Phase 2 — Repo Structure Reconnaissance
+# 第 2 阶段 — 代码仓库结构侦察
 
-_Use this prompt AFTER pasting the Phase 1 context. This maps the codebase before diving into individual files._
+_在粘贴完第 1 阶段上下文后再使用此提示词。该阶段先完成代码库映射，再进入单文件深度分析。_
 
 ---
 
-## PROMPT
+## 提示词
 
-Clone https://github.com/chrislgarry/Apollo-11.
+克隆仓库 https://github.com/chrislgarry/Apollo-11。
 
-For both `Luminary099/` (Lunar Module) and `Comanche055/` (Command Module), do the following:
+针对 `Luminary099/`（登月舱）和 `Comanche055/`（指令舱）两个目录，执行以下操作：
 
-1. List every `.agc` file
-2. Read the header comments of each file (the block at the top that starts with `# Copyright`, `# Filename`, `# Purpose`, etc.)
-3. Extract: filename, stated purpose, approximate line count
+1. 列出所有 `.agc` 文件  
+2. 阅读每个文件的头部注释（文件顶部以 `# Copyright`、`# Filename`、`# Purpose` 等开头的区块）  
+3. 提取以下信息：文件名、声明用途、近似行数
 
-Then group all files into these functional categories:
+然后按以下功能类别对所有文件进行分组：
 
-- **Executive/Scheduler**: job management, task scheduling, waitlist
-- **Restart/Fault Handling**: restart logic, alarm handling, fresh start
-- **Guidance/Navigation**: landing guidance, rendezvous, orbital mechanics, P-programs
-- **Propulsion/Thrust Control**: engine ignition, throttle management, burns
-- **Autopilot/Attitude Control**: digital autopilot (DAP), RCS jet control, attitude maneuvers
-- **DSKY/Display**: keyboard input, display routines, verb/noun processing
-- **IMU/Sensors**: IMU management, radar interface, optics, gyro calibration
-- **Interpreter/Math**: the interpreter VM, math subroutines, trig, matrix ops
-- **System Infrastructure**: interrupt handling, downlink/uplink, T4RUPT servicing, fresh start
-- **Mission-Specific**: lunar landing, ascent, rendezvous, re-entry (things specific to LM or CM)
+- **执行程序/调度器**：作业管理、任务调度、等待列表  
+- **重启/故障处理**：重启逻辑、警报处理、冷启动  
+- **制导/导航**：着陆制导、交会、轨道力学、P 程序  
+- **推进/推力控制**：发动机点火、节流管理、点火机动  
+- **自动驾驶/姿态控制**：数字自动驾驶（DAP）、RCS 喷气控制、姿态机动  
+- **DSKY/显示**：键盘输入、显示例程、动词/名词处理  
+- **IMU/传感器**：IMU 管理、雷达接口、光学系统、陀螺校准  
+- **解释器/数学运算**：解释器虚拟机、数学子程序、三角函数、矩阵运算  
+- **系统基础设施**：中断处理、下行/上行链路、T4RUPT 服务、冷启动  
+- **任务特定模块**：登月、上升、交会、再入（LM 或 CM 特有内容）
 
-Output the result as a markdown file with two sections (Luminary099 and Comanche055), each containing a table grouped by category.
+将结果输出为一个 markdown 文件，包含两个章节（Luminary099 和 Comanche055），每个章节都提供按类别分组的表格。
 
-Note which files exist in BOTH modules (shared infrastructure) vs. which are unique to one module (mission-specific).
+请标注哪些文件在两个模块中都存在（共享基础设施），哪些仅在单一模块中存在（任务特定）。
 
-Flag any files whose purpose you cannot determine from the header comments alone.
+对于仅凭头部注释无法判断用途的文件，请单独标记。
 
-Save the output as `walkthrough/00-repo-structure.md`.
+将输出保存为 `walkthrough/00-repo-structure.md`。
